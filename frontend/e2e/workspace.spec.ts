@@ -25,6 +25,7 @@ test("desktop and mobile workspace with administration", async ({ page }) => {
   ).toBeVisible();
   await page.screenshot({ path: "../artifacts/desktop.png", fullPage: true });
   await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.getByRole("button", { name: "Sign out" })).toBeVisible();
   await page.getByRole("button", { name: "Data browser" }).click();
   await expect(
     page.getByRole("heading", { name: "Data browser", exact: true }),

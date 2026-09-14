@@ -744,9 +744,13 @@ footer {
   .brand-dot {
     margin-left: 0;
   }
-  .workspace-label,
-  .sidebar-bottom {
+  .workspace-label {
     display: none;
+  }
+  .sidebar-bottom {
+    width: 100%;
+    margin-top: 10px;
+    padding-top: 12px;
   }
   .nav {
     width: auto;
