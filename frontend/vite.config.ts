@@ -4,8 +4,8 @@ export default defineConfig({
   plugins: [react()],
   server: {
     proxy: {
-      "/api": "http://localhost:5080",
-      "/health": "http://localhost:5080",
+      "/api": "http://localhost:5188",
+      "/health": "http://localhost:5188",
     },
   },
 });

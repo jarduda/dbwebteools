@@ -34,14 +34,14 @@ Supply `Bootstrap__Password` through your local environment or .NET user-secrets
 
 ```bash
 # Terminal 1 (after setting the bootstrap password locally)
-ASPNETCORE_ENVIRONMENT=Development dotnet run --project backend/DbWeb.Api --no-launch-profile --urls http://localhost:5080
+ASPNETCORE_ENVIRONMENT=Development dotnet run --project backend/DbWeb.Api --no-launch-profile --urls http://localhost:5188
 # Terminal 2
 cd frontend
 npm ci
 npm run dev
 ```
 
-Open the Vite URL. Vite proxies `/api` to port 5080, so browser API access stays same-origin. There is intentionally no permissive CORS policy.
+Open the Vite URL. Vite proxies `/api` to port 5188, so browser API access stays same-origin. There is intentionally no permissive CORS policy.
 
 ## Build and test
 
