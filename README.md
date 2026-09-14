@@ -76,6 +76,6 @@ Layouts are presentation settings, **not column-level security**. Table grants p
 
 ## CI/CD and contributing
 
-Every pull request runs release builds, backend authorization/CSRF tests, frontend editor tests, and real MariaDB CRUD/concurrency validation. Successful builds upload separate deployment artifacts. A version tag (`v*`) validates first, then builds and publishes API/web images to GitHub Container Registry. No external production deployment target is assumed.
+Every pull request runs release builds, backend authorization/CSRF tests, frontend editor tests, and real MariaDB CRUD/concurrency validation. Successful builds upload separate deployment artifacts. Every PR also validates both container builds. A version tag (`v*`) validates first, then builds and publishes commit-SHA-tagged API/web images to GitHub Container Registry. No external production deployment target is assumed.
 
 Use feature branches and pull requests for subsequent changes; never commit credentials or application data. Configure branch protection to require the `validate` job before merging.
