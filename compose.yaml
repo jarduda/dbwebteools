@@ -1,0 +1,23 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    environment:
+      Bootstrap__Username: ${BOOTSTRAP_USERNAME:-admin}
+      Bootstrap__Password: ${BOOTSTRAP_PASSWORD:?Set a unique bootstrap password of at least 14 characters}
+      ASPNETCORE_ENVIRONMENT: ${APP_ENVIRONMENT:-Production}
+    volumes:
+      - app-data:/data
+    restart: unless-stopped
+  web:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    ports:
+      - "127.0.0.1:8080:8080"
+    depends_on:
+      - api
+    restart: unless-stopped
+volumes:
+  app-data:
