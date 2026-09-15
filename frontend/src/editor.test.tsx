@@ -63,6 +63,9 @@ describe("Record editor", () => {
         }}
       />,
     );
+    fireEvent.change(screen.getByLabelText("name"), {
+      target: { value: "Changed" },
+    });
     fireEvent.click(screen.getByText("Save record"));
     await waitFor(() =>
       expect(screen.getByRole("alert").textContent).toBe("Record changed"),
@@ -137,5 +140,117 @@ describe("Lookup editor validation", () => {
     );
     fireEvent.click(screen.getByText("Save record"));
     await waitFor(() => expect(save).toHaveBeenCalledWith({}));
+  });
+});
+
+describe("Date, timestamp and dropdown controls", () => {
+  const temporalColumns = [
+    columns[1],
+    { ...columns[1], name: "stamp", type: "timestamp" },
+    { ...columns[1], name: "day", type: "date" },
+  ];
+  const row = {
+    values: {
+      name: "Original",
+      stamp: "2026-09-15T13:14:15.123456",
+      day: "2026-09-15",
+    },
+    version: "version",
+  };
+  it("prefills native date/time inputs and preserves microseconds when another field changes", async () => {
+    const save = vi.fn().mockResolvedValue(undefined);
+    render(
+      <RecordEditor
+        columns={temporalColumns}
+        fields={[]}
+        row={row}
+        close={() => {}}
+        save={save}
+      />,
+    );
+    expect((screen.getByLabelText("stamp") as HTMLInputElement).type).toBe(
+      "datetime-local",
+    );
+    expect((screen.getByLabelText("stamp") as HTMLInputElement).value).toBe(
+      "2026-09-15T13:14:15.123",
+    );
+    expect((screen.getByLabelText("day") as HTMLInputElement).value).toBe(
+      "2026-09-15",
+    );
+    fireEvent.change(screen.getByLabelText("name"), {
+      target: { value: "Updated" },
+    });
+    fireEvent.click(screen.getByText("Save record"));
+    await waitFor(() => expect(save).toHaveBeenCalledWith({ name: "Updated" }));
+  });
+  it("supports a date-only editor on a timestamp without resubmitting the hidden time", async () => {
+    const save = vi.fn().mockResolvedValue(undefined),
+      close = vi.fn();
+    render(
+      <RecordEditor
+        columns={temporalColumns}
+        fields={[
+          {
+            name: "stamp",
+            label: "Stamp",
+            section: "",
+            order: 0,
+            hidden: false,
+            readOnly: false,
+            widget: "date",
+          },
+        ]}
+        row={row}
+        close={close}
+        save={save}
+      />,
+    );
+    expect((screen.getByLabelText("Stamp") as HTMLInputElement).value).toBe(
+      "2026-09-15",
+    );
+    fireEvent.click(screen.getByText("Save record"));
+    await waitFor(() => expect(close).toHaveBeenCalled());
+    expect(save).not.toHaveBeenCalled();
+    fireEvent.change(screen.getByLabelText("Stamp"), {
+      target: { value: "2026-10-20" },
+    });
+    fireEvent.click(screen.getByText("Save record"));
+    await waitFor(() =>
+      expect(save).toHaveBeenCalledWith({ stamp: "2026-10-20" }),
+    );
+  });
+  it("shows dropdown labels but submits only the selected key", async () => {
+    const save = vi.fn().mockResolvedValue(undefined);
+    render(
+      <RecordEditor
+        columns={[columns[1]]}
+        fields={[
+          {
+            name: "name",
+            label: "Status",
+            section: "",
+            order: 0,
+            hidden: false,
+            readOnly: false,
+            widget: "dropdown",
+            options: [
+              { key: "draft", display: "Draft document" },
+              { key: "ready", display: "Ready to publish" },
+            ],
+          },
+        ]}
+        row={null}
+        close={() => {}}
+        save={save}
+      />,
+    );
+    expect(
+      screen.getByRole("option", { name: "Ready to publish" }),
+    ).toBeTruthy();
+    fireEvent.change(screen.getByLabelText("Status"), {
+      target: { value: "ready" },
+    });
+    fireEvent.click(screen.getByText("Save record"));
+    await waitFor(() => expect(save).toHaveBeenCalledWith({ name: "ready" }));
   });
 });

@@ -36,9 +36,7 @@ jobs:
       - run: npx playwright install --with-deps chromium
         working-directory: frontend
       - name: Seed browser test fixture
-        run: >-
-          docker exec ${{ job.services.mariadb.id }} mariadb -uroot -pci-disposable-root dbweb_tests -e
-          "CREATE TABLE browser_records (id INT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(100) NOT NULL, email VARCHAR(150), status VARCHAR(30) DEFAULT 'active'); CREATE TABLE lookup_people (id BIGINT PRIMARY KEY, name VARCHAR(100) NOT NULL, email VARCHAR(100)); INSERT INTO lookup_people VALUES (9007199254740993,'Alice Friendly','alice.lookup@example.test'),(42,'Bob Friendly','bob.lookup@example.test'); CREATE TABLE lookup_orders (id INT AUTO_INCREMENT PRIMARY KEY, title VARCHAR(100) NOT NULL, person_id BIGINT NULL, FOREIGN KEY (person_id) REFERENCES lookup_people(id));"
+        run: docker exec -i ${{ job.services.mariadb.id }} mariadb -uroot -pci-disposable-root dbweb_tests < tests/fixtures/browser.sql
       - run: npx playwright test
         working-directory: frontend
       - run: npm audit --prefix frontend --omit=dev --audit-level=high

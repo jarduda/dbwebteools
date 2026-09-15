@@ -30,6 +30,13 @@ import {
   type Grant,
 } from "./api";
 import "./style.css";
+import {
+  DropdownConfiguration,
+  dropdownError,
+  widgetFor,
+  temporalInput,
+  cellText,
+} from "./field-controls";
 import { LookupConfiguration, LookupInput } from "./lookups";
 function App() {
   const [user, setUser] = useState<User | null>(null),
@@ -443,7 +450,12 @@ function Records({
                       {r.values[c.name] == null ? (
                         <span className="null">NULL</span>
                       ) : (
-                        String(r.displayValues?.[c.name] ?? r.values[c.name])
+                        (r.displayValues?.[c.name] ??
+                        cellText(
+                          r.values[c.name],
+                          c,
+                          settings?.fields.find((f) => f.name === c.name),
+                        ))
                       )}
                     </td>
                   ))}
@@ -607,17 +619,18 @@ export function RecordEditor({
                   `Select a related record for ${layout(c)?.label || c.name}.`,
                 );
             }
-            await save(
-              Object.fromEntries(
-                writable
-                  .filter(
-                    (c) =>
-                      !(layout(c)?.readOnly || layout(c)?.hidden) &&
-                      c.name in values,
-                  )
-                  .map((c) => [c.name, values[c.name]]),
-              ),
+            const payload = Object.fromEntries(
+              writable
+                .filter(
+                  (c) =>
+                    !(layout(c)?.readOnly || layout(c)?.hidden) &&
+                    c.name in values &&
+                    (!row || values[c.name] !== row.values[c.name]),
+                )
+                .map((c) => [c.name, values[c.name]]),
             );
+            if (row && Object.keys(payload).length === 0) close();
+            else await save(payload);
           } catch (e) {
             setError((e as Error).message);
           } finally {
@@ -640,6 +653,7 @@ export function RecordEditor({
             .filter((c) => !layout(c)?.hidden)
             .map((c) => {
               const l = layout(c),
+                widget = widgetFor(c, l),
                 disabled =
                   c.generated ||
                   c.autoIncrement ||
@@ -671,6 +685,47 @@ export function RecordEditor({
                         setValues((v) => ({ ...v, [c.name]: key }))
                       }
                     />
+                  ) : widget === "dropdown" ? (
+                    <select
+                      aria-label={l?.label || c.name}
+                      disabled={disabled}
+                      value={String(values[c.name] ?? "")}
+                      required={
+                        !disabled &&
+                        !c.nullable &&
+                        (row != null || c.default == null)
+                      }
+                      onChange={(e) =>
+                        setValues((old) => {
+                          const next = { ...old };
+                          if (e.target.value !== "")
+                            next[c.name] = e.target.value;
+                          else if (c.nullable) next[c.name] = null;
+                          else delete next[c.name];
+                          return next;
+                        })
+                      }
+                    >
+                      <option value="">
+                        {c.nullable
+                          ? "No value (NULL)"
+                          : !row && c.default != null
+                            ? "Use database default"
+                            : "Choose a value…"}
+                      </option>
+                      {values[c.name] != null &&
+                        values[c.name] !== "" &&
+                        !l?.options?.some((o) => o.key === values[c.name]) && (
+                          <option value={String(values[c.name])}>
+                            {String(values[c.name])} (not in configured list)
+                          </option>
+                        )}
+                      {l?.options?.map((o) => (
+                        <option key={o.key} value={o.key}>
+                          {o.display}
+                        </option>
+                      ))}
+                    </select>
                   ) : l?.widget === "textarea" ? (
                     <textarea
                       disabled={disabled}
@@ -684,13 +739,15 @@ export function RecordEditor({
                       aria-label={l?.label || c.name}
                       disabled={disabled}
                       type={
-                        l?.widget === "date"
+                        widget === "date"
                           ? "date"
-                          : l?.widget === "number"
-                            ? "number"
-                            : l?.widget === "checkbox"
-                              ? "checkbox"
-                              : "text"
+                          : widget === "datetime"
+                            ? "datetime-local"
+                            : l?.widget === "number"
+                              ? "number"
+                              : l?.widget === "checkbox"
+                                ? "checkbox"
+                                : "text"
                       }
                       step="any"
                       checked={
@@ -701,7 +758,9 @@ export function RecordEditor({
                       value={
                         l?.widget === "checkbox"
                           ? undefined
-                          : String(values[c.name] ?? "")
+                          : ["date", "datetime"].includes(widget)
+                            ? temporalInput(values[c.name], widget)
+                            : String(values[c.name] ?? "")
                       }
                       placeholder={
                         c.autoIncrement
@@ -714,31 +773,55 @@ export function RecordEditor({
                       }
                       required={!disabled && !c.nullable && c.default == null}
                       onChange={(e) =>
-                        setValues({
-                          ...values,
-                          [c.name]:
-                            l?.widget === "checkbox"
-                              ? e.target.checked
-                              : e.target.value,
+                        setValues((old) => {
+                          const next = { ...old };
+                          if (
+                            ["date", "datetime"].includes(widget) &&
+                            !e.target.value
+                          ) {
+                            if (c.nullable) next[c.name] = null;
+                            else if (!row && c.default != null)
+                              delete next[c.name];
+                            else next[c.name] = "";
+                          } else
+                            next[c.name] =
+                              widget === "checkbox"
+                                ? e.target.checked
+                                : e.target.value;
+                          return next;
                         })
                       }
                     />
                   )}{" "}
-                  {c.nullable && !disabled && l?.widget !== "lookup" && (
-                    <span className="null-toggle">
-                      <input
-                        type="checkbox"
-                        checked={values[c.name] === null}
-                        onChange={(e) =>
-                          setValues({
-                            ...values,
-                            [c.name]: e.target.checked ? null : "",
-                          })
-                        }
-                      />
-                      Set NULL
-                    </span>
+                  {widget === "date" &&
+                    ["datetime", "timestamp"].includes(c.type) && (
+                      <small>
+                        Changing the date sets the time to midnight.
+                      </small>
+                    )}
+                  {widget === "datetime" && (
+                    <small>
+                      Database session time; unchanged values retain full
+                      precision.
+                    </small>
                   )}
+                  {c.nullable &&
+                    !disabled &&
+                    !["lookup", "dropdown"].includes(widget) && (
+                      <span className="null-toggle">
+                        <input
+                          type="checkbox"
+                          checked={values[c.name] === null}
+                          onChange={(e) =>
+                            setValues({
+                              ...values,
+                              [c.name]: e.target.checked ? null : "",
+                            })
+                          }
+                        />
+                        Set NULL
+                      </span>
+                    )}
                 </label>
               );
             })}
@@ -1221,6 +1304,10 @@ function Admin({
                                               e.target.value === "lookup"
                                                 ? x.lookup
                                                 : undefined,
+                                            options:
+                                              e.target.value === "dropdown"
+                                                ? x.options || []
+                                                : undefined,
                                           }
                                         : x,
                                     ),
@@ -1233,10 +1320,20 @@ function Admin({
                                   "textarea",
                                   "number",
                                   "date",
+                                  "datetime",
+                                  "dropdown",
                                   "checkbox",
                                   "lookup",
                                 ].map((w) => (
-                                  <option key={w}>{w}</option>
+                                  <option key={w} value={w}>
+                                    {w === "datetime"
+                                      ? "DateTime"
+                                      : w === "date"
+                                        ? "Date"
+                                        : w === "dropdown"
+                                          ? "Dropdown"
+                                          : w}
+                                  </option>
                                 ))}
                               </select>
                             ) : (
@@ -1286,6 +1383,22 @@ function Admin({
                 </table>
               </div>
               {fields
+                .filter((f) => f.widget === "dropdown")
+                .map((f) => (
+                  <DropdownConfiguration
+                    key={`${connection}/${table}/${f.name}`}
+                    name={f.name}
+                    options={f.options || []}
+                    change={(options) =>
+                      setFields((old) =>
+                        old.map((x) =>
+                          x.name === f.name ? { ...x, options } : x,
+                        ),
+                      )
+                    }
+                  />
+                ))}
+              {fields
                 .filter((f) => f.widget === "lookup")
                 .map((f) => (
                   <LookupConfiguration
@@ -1306,7 +1419,15 @@ function Admin({
               <button
                 className="primary"
                 disabled={
-                  !table || busy || layoutLoading || fields.length === 0
+                  !table ||
+                  busy ||
+                  layoutLoading ||
+                  fields.length === 0 ||
+                  fields.some(
+                    (f) =>
+                      f.widget === "dropdown" &&
+                      !!dropdownError(f.options || []),
+                  )
                 }
                 onClick={() =>
                   action(

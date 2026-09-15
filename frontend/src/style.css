@@ -944,3 +944,26 @@ footer {
   background: #fff;
   box-shadow: -5px 0 8px #17243b08;
 }
+.dropdown-config {
+  margin: 20px 0;
+  padding: 18px;
+  border: 1px solid #dce3ed;
+  border-radius: 12px;
+}
+.dropdown-option {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  gap: 12px;
+  align-items: end;
+  margin-bottom: 14px;
+}
+.dropdown-option label {
+  min-width: 0;
+}
+@media (max-width: 650px) {
+  .dropdown-option {
+    grid-template-columns: 1fr;
+    padding-bottom: 14px;
+    border-bottom: 1px solid #dce3ed;
+  }
+}
