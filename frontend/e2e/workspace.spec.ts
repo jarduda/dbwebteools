@@ -741,3 +741,143 @@ test("required layout fields block empty creates and updates", async ({
     .click();
   await expect(row).toHaveCount(0);
 });
+
+test("layout labels, default sorting and filters persist and constrain search", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.getByLabel("Username", { exact: true }).fill("admin");
+  await page
+    .getByLabel("Password", { exact: true })
+    .fill("browser-test-only-password");
+  await page.getByRole("button", { name: "Sign in →" }).click();
+  await expect(
+    page.getByRole("heading", { name: "Data browser", exact: true }),
+  ).toBeVisible();
+  const id = await page.evaluate(
+    async ({ port, password }) => {
+      const { token } = await (await fetch("/api/auth/csrf")).json();
+      const response = await fetch("/api/admin/connections", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-CSRF-TOKEN": token },
+        body: JSON.stringify({
+          name: "List views test",
+          host: "127.0.0.1",
+          port,
+          database: "dbweb_tests",
+          username: "root",
+          password,
+          verifyTls: false,
+        }),
+      });
+      if (!response.ok) throw new Error("Connection setup failed");
+      return (await response.json()).id as number;
+    },
+    {
+      port: process.env.CI ? 3306 : 33079,
+      password: process.env.CI ? "ci-disposable-root" : "",
+    },
+  );
+  await page.reload();
+  await page.getByRole("button", { name: "Editor layouts" }).click();
+  await page
+    .getByRole("combobox", { name: "Connection", exact: true })
+    .selectOption(String(id));
+  await page
+    .getByRole("combobox", { name: "Table", exact: true })
+    .selectOption("z_list_view_records");
+  await page.getByLabel("title label", { exact: true }).fill("Document");
+  await page.getByLabel("amount label", { exact: true }).fill("Total");
+  await page.getByLabel("List title", { exact: true }).fill("Open documents");
+  await page
+    .getByLabel("Default sort column", { exact: true })
+    .selectOption("amount");
+  await page.getByLabel("Sort direction", { exact: true }).selectOption("desc");
+  await page.getByRole("button", { name: "Add filter", exact: true }).click();
+  await page
+    .getByLabel("Filter 1 field", { exact: true })
+    .selectOption("status");
+  await page.getByLabel("Filter 1 value", { exact: true }).fill("open");
+  await page.getByRole("button", { name: "Add filter", exact: true }).click();
+  await page
+    .getByLabel("Filter 2 field", { exact: true })
+    .selectOption("amount");
+  await page
+    .getByLabel("Filter 2 condition", { exact: true })
+    .selectOption("gte");
+  await page.getByLabel("Filter 2 value", { exact: true }).fill("10");
+  await page.getByRole("button", { name: "Save layout", exact: true }).click();
+  await expect(page.getByText("Layout saved.", { exact: true })).toBeVisible();
+  await page.reload();
+  await page.getByRole("button", { name: "Editor layouts" }).click();
+  await page
+    .getByRole("combobox", { name: "Connection", exact: true })
+    .selectOption(String(id));
+  await page
+    .getByRole("combobox", { name: "Table", exact: true })
+    .selectOption("z_list_view_records");
+  await expect(page.getByLabel("title label", { exact: true })).toHaveValue(
+    "Document",
+  );
+  await expect(page.getByLabel("List title", { exact: true })).toHaveValue(
+    "Open documents",
+  );
+  await expect(
+    page.getByLabel("Default sort column", { exact: true }),
+  ).toHaveValue("amount");
+  await expect(page.getByLabel("Filter 2 value", { exact: true })).toHaveValue(
+    "10",
+  );
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
+  await page.screenshot({
+    path: "../artifacts/layout-filters-mobile.png",
+    fullPage: true,
+  });
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.getByRole("button", { name: "Data browser", exact: true }).click();
+  await page
+    .getByRole("combobox", { name: "Connection", exact: true })
+    .selectOption(String(id));
+  await page
+    .getByRole("combobox", { name: "Table", exact: true })
+    .selectOption("z_list_view_records");
+  await expect(
+    page.getByRole("heading", { name: "Open documents", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("columnheader", { name: "Document", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("columnheader", { name: "Total", exact: true }),
+  ).toHaveAttribute("aria-sort", "descending");
+  const names = () => page.locator("tbody tr td:nth-child(2)");
+  await expect(names()).toHaveText(["Beta", "Alpha"]);
+  await expect(page.getByRole("note")).toContainText(
+    "status Equals open AND Total At least 10",
+  );
+  await page
+    .getByRole("columnheader", { name: "Total", exact: true })
+    .getByRole("button")
+    .click();
+  await expect(names()).toHaveText(["Alpha", "Beta"]);
+  await page
+    .getByRole("button", { name: "Use default sorting", exact: true })
+    .click();
+  await expect(names()).toHaveText(["Beta", "Alpha"]);
+  await page.getByLabel("Search records", { exact: true }).fill("closed");
+  await expect(page.getByText("0 records", { exact: true })).toBeVisible();
+  await page.getByLabel("Search records", { exact: true }).fill("Alpha");
+  await expect(names()).toHaveText(["Alpha"]);
+  await page
+    .getByRole("button", { name: "Edit record 1", exact: true })
+    .click();
+  await expect(
+    page.getByRole("dialog").getByLabel("Document", { exact: true }),
+  ).toHaveValue("Alpha");
+  await page.keyboard.press("Escape");
+});

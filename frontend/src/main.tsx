@@ -28,9 +28,11 @@ import {
   type Page,
   type Field,
   type Grant,
+  type ListView,
 } from "./api";
 import "./style.css";
 import { JoinConfiguration, listColumns } from "./layout-fields";
+import { ListViewEditor, filterSummary } from "./list-view";
 import {
   DropdownConfiguration,
   dropdownError,
@@ -350,6 +352,7 @@ function Records({
     [settings, setSettings] = useState<{
       grant: Grant;
       fields: Field[];
+      view: ListView;
     } | null>(null),
     [editing, setEditing] = useState<Row | null | undefined>(undefined),
     [deleting, setDeleting] = useState<Row | null>(null),
@@ -358,7 +361,7 @@ function Records({
   const load = () => {
     setBusy(true);
     return api<Page>(
-      `${base}/records?page=${page}&size=25&search=${encodeURIComponent(query)}${sort ? "&sort=" + encodeURIComponent(sort) : ""}&descending=${desc}`,
+      `${base}/records?page=${page}&size=25&search=${encodeURIComponent(query)}${sort ? "&sort=" + encodeURIComponent(sort) + "&descending=" + desc : ""}`,
     )
       .then(setData)
       .catch(fail)
@@ -366,7 +369,7 @@ function Records({
   };
   useEffect(() => {
     load();
-    api<{ grant: Grant; fields: Field[] }>(base + "/settings")
+    api<{ grant: Grant; fields: Field[]; view: ListView }>(base + "/settings")
       .then(setSettings)
       .catch(fail);
   }, [page, query, sort, desc]);
@@ -401,7 +404,7 @@ function Records({
             <span className="table-icon">
               <Table2 size={20} />
             </span>
-            <h2>{table}</h2>
+            <h2>{settings?.view?.label || table}</h2>
             <span className="count">{data?.total ?? "…"} records</span>
           </div>
           {settings?.grant.create && mutable && (
@@ -426,6 +429,23 @@ function Records({
             Refresh
           </button>
         </div>
+        {!!settings?.view?.filters?.length && (
+          <div className="notice" role="note">
+            Layout filter: {filterSummary(settings.view, settings.fields)}
+          </div>
+        )}
+        {sort && (
+          <button
+            className="reset-sort"
+            onClick={() => {
+              setSort("");
+              setDesc(false);
+              setPage(1);
+            }}
+          >
+            Use default sorting
+          </button>
+        )}
         {!mutable && data && (
           <div className="notice">
             This table has no primary key and is read-only.
@@ -441,7 +461,16 @@ function Records({
             <thead>
               <tr>
                 {displayColumns.map((c) => (
-                  <th key={c.name}>
+                  <th
+                    key={c.name}
+                    aria-sort={
+                      data?.sort === c.name
+                        ? data.descending
+                          ? "descending"
+                          : "ascending"
+                        : "none"
+                    }
+                  >
                     <button
                       disabled={joined(c.name)}
                       title={
@@ -449,7 +478,10 @@ function Records({
                       }
                       onClick={() => {
                         setSort(c.name);
-                        setDesc(sort === c.name ? !desc : false);
+                        setDesc(
+                          data?.sort === c.name ? !data.descending : false,
+                        );
+                        setPage(1);
                       }}
                     >
                       {settings?.fields.find((f) => f.name === c.name)?.label ||
@@ -1061,6 +1093,7 @@ function Admin({
     }),
     [fields, setFields] = useState<Field[]>([]),
     [layoutColumns, setLayoutColumns] = useState<Column[]>([]),
+    [listView, setListView] = useState<ListView>({}),
     [layoutLoading, setLayoutLoading] = useState(false),
     [message, setMessage] = useState(""),
     [busy, setBusy] = useState(false);
@@ -1105,19 +1138,22 @@ function Admin({
     setGrant(g || { read: false, create: false, update: false, delete: false });
     let active = true;
     setFields([]);
+    setListView({});
+    setLayoutColumns([]);
     setLayoutLoading(!!table && view === "layouts");
     if (table && view === "layouts")
       Promise.all([
         api<{ columns: Column[] }>(
           `/connections/${connection}/tables/${encodeURIComponent(table)}/schema`,
         ),
-        api<{ fields: Field[] }>(
+        api<{ fields: Field[]; view: ListView }>(
           `/connections/${connection}/tables/${encodeURIComponent(table)}/settings`,
         ),
       ])
         .then(([p, s]) => {
           if (active) {
             setLayoutColumns(p.columns);
+            setListView(s.view || {});
             setFields([
               ...p.columns.map(
                 (c, i) =>
@@ -1393,6 +1429,14 @@ function Admin({
           ) : (
             <>
               <h2>Record and list layout</h2>
+              {!layoutLoading && (
+                <ListViewEditor
+                  value={listView}
+                  columns={layoutColumns}
+                  fields={fields}
+                  change={setListView}
+                />
+              )}
               <p>
                 Customize labels, sections, order, visibility, and field
                 controls. List visibility is independent of editor visibility.
@@ -1405,7 +1449,7 @@ function Admin({
                   <thead>
                     <tr>
                       <th>Column</th>
-                      <th>Label</th>
+                      <th>Field label</th>
                       <th>Section</th>
                       <th>Order</th>
                       <th>Control</th>
@@ -1726,7 +1770,10 @@ function Admin({
                       api(
                         `/admin/connections/${connection}/tables/${encodeURIComponent(table)}/layout`,
                         "PUT",
-                        fields,
+                        {
+                          fields,
+                          view: { ...listView, label: listView.label?.trim() },
+                        },
                       ),
                     "Layout saved.",
                   )

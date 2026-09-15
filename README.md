@@ -128,3 +128,18 @@ Use feature branches and pull requests for subsequent changes; never commit cred
 In **Administration → Editor layouts**, check **Required** for fields that must be filled and save the layout. Required fields are marked in the record editor. NULL, missing values, empty strings, and whitespace-only strings are rejected; zero and false are valid. The API enforces the rule as well as the form. On updates, it checks submitted values together with the locked current record, so an unchanged empty required field must be repaired before other edits can be saved. Deletes are unaffected.
 
 Required fields must be visible, editable stored columns; generated, auto-increment, hidden, read-only, and joined fields cannot be marked required. Hiding a field or marking it read-only clears its Required option. On creation, a required value must be supplied explicitly, even if the database defines a default. Existing layouts default to not required; database NOT NULL constraints still apply. Configuration is stored in existing layout JSON, without schema changes.
+
+### Labels, default sorting, and list filters
+
+In **Administration → Editor layouts**, choose a connection/table:
+
+- Set **Field label** for friendly names in list headings, editing forms, and filter controls. Empty labels fall back to column names. Labels do not rename database columns.
+- Set **List title** to replace the table name above the record list (optional).
+- Choose a **Default sort column** and **Ascending/Descending** direction. Primary keys are added as tie-breakers for stable pagination. Users can temporarily sort by clicking a list heading, then click **Use default sorting** to restore the saved order.
+- Click **Add filter**, select a stored field, condition, and value. Use **All criteria (AND)** or **Any criterion (OR)**. Save the layout. Up to 20 criteria are supported. Filter and sort columns can be hidden from the list, but cannot be virtual joined fields.
+
+Filters are enforced on the records API before counting and pagination; free-text search is combined with the saved criteria, never substituted for them. The list displays its active filter. Create/update operations can produce records outside the current view; those records will disappear from that list after saving. Filters are list configuration, **not row-level security**, and do not constrain lookup selectors or change existing table permissions.
+
+Conditions include equals/not-equals, greater/less than (inclusive or exclusive), text contains/starts-with, and IS NULL/IS NOT NULL. Text matching follows MariaDB column collation; contains/starts-with values treat `%` and `_` literally. Empty text and NULL are distinct. Not-equals excludes NULL rows; use an OR with IS NULL to include them. Relation filters use stored keys; configured text dropdowns offer display labels while storing the option key. Dates use database-session values without timezone conversion. Numeric filters preserve integer/decimal precision (up to 65 digits and 30 decimal places).
+
+Settings remain in `RecordLayout.FieldsJson` in the existing application SQLite database. Existing array-shaped layouts are read without migration. The layout PUT endpoint accepts `{ "fields": [...], "view": { "label": "Open orders", "sort": "id", "descending": true, "match": "all", "filters": [{ "column": "status", "operator": "eq", "value": "open" }] } }`; legacy field-array writes preserve saved view settings. The settings GET endpoint returns `fields`, `view`, and `grant`. Set `view` to `{}` to clear list settings.

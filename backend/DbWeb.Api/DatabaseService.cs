@@ -129,12 +129,18 @@ public partial class DatabaseService(IDataProtectionProvider protection)
         int size,
         string? sort,
         bool descending,
-        string? search
+        string? search,
+        ListView? view = null
     )
     {
         var cols = await Columns(db, table);
         page = Math.Max(1, page);
         size = Math.Clamp(size, 1, 100);
+        if (string.IsNullOrEmpty(sort))
+        {
+            sort = string.IsNullOrEmpty(view?.Sort) ? null : view.Sort;
+            descending = view?.Descending ?? descending;
+        }
         sort ??= cols.FirstOrDefault(x => x.PrimaryKey)?.Name ?? cols[0].Name;
         if (!cols.Any(x => x.Name == sort))
             throw new ApiError(400, "Unknown sort column.");
@@ -143,28 +149,35 @@ public partial class DatabaseService(IDataProtectionProvider protection)
                 new[] { "varchar", "char", "text", "mediumtext", "longtext" }.Contains(x.Type)
             )
             .ToList();
-        string where = "";
+        var predicates = new List<string>();
+        var viewPredicate = ViewPredicate(cmd, view, cols);
+        if (viewPredicate != "")
+            predicates.Add(viewPredicate);
         if (!string.IsNullOrEmpty(search) && searchable.Count > 0)
         {
-            where =
-                " WHERE "
-                + string.Join(" OR ", searchable.Select(x => $"{Quote(x.Name)} LIKE @search"));
+            predicates.Add(
+                "("
+                    + string.Join(" OR ", searchable.Select(x => $"{Quote(x.Name)} LIKE @search"))
+                    + ")"
+            );
             cmd.Parameters.AddWithValue("@search", "%" + search + "%");
         }
+        var where = predicates.Count == 0 ? "" : " WHERE " + string.Join(" AND ", predicates);
+        var order = $"{Quote(sort)} {(descending ? "DESC" : "ASC")}";
+        foreach (var key in cols.Where(c => c.PrimaryKey && c.Name != sort))
+            order += $", {Quote(key.Name)} ASC";
         cmd.CommandText = $"SELECT COUNT(*) FROM {Quote(table)}{where}";
         var total = Convert.ToInt64(await cmd.ExecuteScalarAsync());
         cmd.CommandText =
-            $"SELECT * FROM {Quote(table)}{where} ORDER BY {Quote(sort)} {(descending ? "DESC" : "ASC")} LIMIT @size OFFSET @offset";
+            $"SELECT * FROM {Quote(table)}{where} ORDER BY {order} LIMIT @size OFFSET @offset";
         cmd.Parameters.AddWithValue("@size", size);
         cmd.Parameters.AddWithValue("@offset", checked((long)(page - 1) * size));
         var rows = await Read(cmd);
-        return new(
-            total,
-            page,
-            size,
-            cols,
-            rows.Select(x => new RecordRow(x, Version(x))).ToList()
-        );
+        return new(total, page, size, cols, rows.Select(x => new RecordRow(x, Version(x))).ToList())
+        {
+            Sort = sort,
+            Descending = descending,
+        };
     }
 
     static object Value(JsonElement e, ColumnInfo col)

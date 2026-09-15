@@ -159,6 +159,5 @@ public partial class DatabaseService
     public static string KeyText(object? value) =>
         Convert.ToString(value, CultureInfo.InvariantCulture) ?? "";
 
-    public static List<LayoutField> LayoutFields(string? json) =>
-        JsonSerializer.Deserialize<List<LayoutField>>(json ?? "[]") ?? [];
+    public static List<LayoutField> LayoutFields(string? json) => Layout(json).Fields;
 }
