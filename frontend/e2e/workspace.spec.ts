@@ -447,3 +447,202 @@ test("date/time and keyed dropdown layouts preserve values and enforce unique op
     .click();
   await expect(row).toHaveCount(0);
 });
+
+test("list columns and read-only joins refresh when a lookup changes", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.getByLabel("Username", { exact: true }).fill("admin");
+  await page
+    .getByLabel("Password", { exact: true })
+    .fill("browser-test-only-password");
+  await page.getByRole("button", { name: "Sign in →" }).click();
+  await expect(
+    page.getByRole("heading", { name: "Data browser", exact: true }),
+  ).toBeVisible();
+  const id = await page.evaluate(
+    async ({ port, password }) => {
+      const { token } = await (await fetch("/api/auth/csrf")).json();
+      const r = await fetch("/api/admin/connections", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-CSRF-TOKEN": token },
+        body: JSON.stringify({
+          name: "Joined layout test",
+          host: "127.0.0.1",
+          port,
+          database: "dbweb_tests",
+          username: "root",
+          password,
+          verifyTls: false,
+        }),
+      });
+      if (!r.ok) throw new Error("Connection setup failed");
+      return (await r.json()).id as number;
+    },
+    {
+      port: process.env.CI ? 3306 : 33079,
+      password: process.env.CI ? "ci-disposable-root" : "",
+    },
+  );
+  await page.reload();
+  await page.getByRole("button", { name: "Editor layouts" }).click();
+  await page
+    .getByRole("combobox", { name: "Connection", exact: true })
+    .selectOption(String(id));
+  await page
+    .getByRole("combobox", { name: "Table", exact: true })
+    .selectOption("lookup_orders");
+  await page.getByLabel("id showInList", { exact: true }).uncheck();
+  await page.getByLabel("person_id showInList", { exact: true }).uncheck();
+  await page.getByLabel("title listOrder").fill("1");
+  await page.getByLabel("person_id control").selectOption("lookup");
+  await page.getByLabel("person_id label", { exact: true }).fill("Customer");
+  await page
+    .getByLabel("person_id related table")
+    .selectOption("lookup_people");
+  await page.getByLabel("person_id key column").selectOption("id");
+  await page.getByLabel("person_id display column").selectOption("name");
+  for (const [i, value, label] of [
+    [1, "email", "Customer email"],
+    [2, "name", "Customer name"],
+  ] as const) {
+    await page.getByRole("button", { name: "Add joined field" }).click();
+    await page.getByLabel(`joined_${i} label`, { exact: true }).fill(label);
+    await page
+      .getByLabel(`joined_${i} source column`)
+      .selectOption("person_id");
+    await page
+      .getByLabel(`joined_${i} joined table`)
+      .selectOption("lookup_people");
+    await page
+      .getByLabel(`joined_${i} join key`, { exact: true })
+      .selectOption("id");
+    await page.getByLabel(`joined_${i} joined value`).selectOption(value);
+    await expect(
+      page.getByLabel(`joined_${i} readOnly`, { exact: true }),
+    ).toBeDisabled();
+  }
+  await page.getByLabel("joined_1 listOrder").fill("0");
+  await page.getByLabel("joined_2 showInList", { exact: true }).uncheck();
+  await page.getByRole("button", { name: "Save layout" }).click();
+  await expect(page.getByText("Layout saved.", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Data browser" }).click();
+  await page
+    .getByRole("combobox", { name: "Connection", exact: true })
+    .selectOption(String(id));
+  await page
+    .getByRole("combobox", { name: "Table", exact: true })
+    .selectOption("lookup_orders");
+  await expect(page.getByRole("columnheader")).toHaveText([
+    "Customer email",
+    "title",
+    "Actions",
+  ]);
+  await page.getByRole("button", { name: "Add record", exact: true }).click();
+  const create = page.getByRole("dialog", {
+    name: "Add a record",
+    exact: true,
+  });
+  await create
+    .getByLabel("title", { exact: true })
+    .fill("Joined browser order");
+  await expect(
+    create.getByLabel("Customer email", { exact: true }),
+  ).toHaveValue("NULL");
+  await create
+    .getByRole("button", { name: "Choose Customer", exact: true })
+    .click();
+  const lookup = page.getByRole("dialog", {
+    name: "Select Customer",
+    exact: true,
+  });
+  await lookup
+    .getByRole("button", {
+      name: "Select Alice Friendly (9007199254740993)",
+      exact: true,
+    })
+    .click();
+  await expect(
+    create.getByLabel("Customer email", { exact: true }),
+  ).toHaveValue("alice.lookup@example.test");
+  await expect(create.getByLabel("Customer name", { exact: true })).toHaveValue(
+    "Alice Friendly",
+  );
+  await expect(
+    create.getByLabel("Customer email", { exact: true }),
+  ).toHaveAttribute("readonly", "");
+  const mutation = page.waitForRequest((r) =>
+    r.url().endsWith("/lookup_orders/create"),
+  );
+  await create
+    .getByRole("button", { name: "Save record", exact: true })
+    .click();
+  expect((await mutation).postDataJSON().values).toEqual({
+    title: "Joined browser order",
+    person_id: "9007199254740993",
+  });
+  await expect(create).toHaveCount(0);
+  const row = page.getByRole("row").filter({ hasText: "Joined browser order" });
+  await expect(row).toContainText("alice.lookup@example.test");
+  await row.getByRole("button", { name: /Edit record/ }).click();
+  const edit = page.getByRole("dialog", { name: "Edit record", exact: true });
+  await edit
+    .getByRole("button", { name: "Choose Customer", exact: true })
+    .click();
+  await lookup
+    .getByRole("button", { name: "Select Bob Friendly (42)", exact: true })
+    .click();
+  await expect(edit.getByLabel("Customer email", { exact: true })).toHaveValue(
+    "bob.lookup@example.test",
+  );
+  await expect(edit.getByLabel("Customer name", { exact: true })).toHaveValue(
+    "Bob Friendly",
+  );
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.screenshot({
+    path: "../artifacts/joined-fields-mobile.png",
+    fullPage: true,
+  });
+  await edit.getByRole("button", { name: "Save record", exact: true }).click();
+  await expect(edit).toHaveCount(0);
+  await expect(row).toContainText("bob.lookup@example.test");
+  await row.getByRole("button", { name: /Edit record/ }).click();
+  await edit
+    .getByRole("button", { name: "Clear Customer", exact: true })
+    .click();
+  await expect(edit.getByLabel("Customer email", { exact: true })).toHaveValue(
+    "NULL",
+  );
+  await edit.getByRole("button", { name: "Save record", exact: true }).click();
+  await expect(edit).toHaveCount(0);
+  await row.getByRole("button", { name: /Delete record/ }).click();
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Delete record", exact: true })
+    .click();
+  await expect(row).toHaveCount(0);
+  // Reopen configuration to prove virtual fields and independent list settings persisted.
+  await page.getByRole("button", { name: "Editor layouts" }).click();
+  await page
+    .getByRole("combobox", { name: "Connection", exact: true })
+    .selectOption(String(id));
+  await page
+    .getByRole("combobox", { name: "Table", exact: true })
+    .selectOption("lookup_orders");
+  await expect(page.getByLabel("joined_1 label", { exact: true })).toHaveValue(
+    "Customer email",
+  );
+  await expect(
+    page.getByLabel("joined_2 showInList", { exact: true }),
+  ).not.toBeChecked();
+  await page.getByLabel("title showInList", { exact: true }).uncheck();
+  await page.getByLabel("joined_1 showInList", { exact: true }).uncheck();
+  await page.getByRole("button", { name: "Save layout" }).click();
+  await expect(page.getByText("Layout saved.", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Data browser" }).click();
+  await expect(
+    page.getByText(
+      "No list fields selected. Configure visible fields in Editor layouts.",
+    ),
+  ).toBeVisible();
+});

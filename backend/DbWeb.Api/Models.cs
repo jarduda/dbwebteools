@@ -53,7 +53,10 @@ public record LayoutField(
     bool ReadOnly,
     string Widget,
     LookupConfig? Lookup = null,
-    List<DropdownOption>? Options = null
+    List<DropdownOption>? Options = null,
+    bool ShowInList = true,
+    int? ListOrder = null,
+    JoinConfig? Join = null
 );
 
 public class AuditEntry
@@ -123,6 +126,7 @@ public record LookupConfig(
 public record RecordRow(Dictionary<string, object?> Values, string Version)
 {
     public Dictionary<string, string?> DisplayValues { get; } = new();
+    public Dictionary<string, object?> JoinedValues { get; } = new();
 }
 
 public record RecordPage(
@@ -131,6 +135,13 @@ public record RecordPage(
     int Size,
     List<ColumnInfo> Columns,
     List<RecordRow> Rows
-);
+)
+{
+    public List<ColumnInfo> JoinedColumns { get; } = new();
+}
 
 public record DropdownOption(string Key, string Display);
+
+public record JoinConfig(string SourceColumn, string Table, string KeyColumn, string ValueColumn);
+
+public record JoinInput(Dictionary<string, System.Text.Json.JsonElement> Values);
