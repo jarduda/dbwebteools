@@ -646,3 +646,98 @@ test("list columns and read-only joins refresh when a lookup changes", async ({
     ),
   ).toBeVisible();
 });
+
+test("required layout fields block empty creates and updates", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.getByLabel("Username", { exact: true }).fill("admin");
+  await page
+    .getByLabel("Password", { exact: true })
+    .fill("browser-test-only-password");
+  await page.getByRole("button", { name: "Sign in →" }).click();
+  await expect(
+    page.getByRole("heading", { name: "Data browser", exact: true }),
+  ).toBeVisible();
+  const id = await page.evaluate(
+    async ({ port, password }) => {
+      const { token } = await (await fetch("/api/auth/csrf")).json();
+      const r = await fetch("/api/admin/connections", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-CSRF-TOKEN": token },
+        body: JSON.stringify({
+          name: "Required test",
+          host: "127.0.0.1",
+          port,
+          database: "dbweb_tests",
+          username: "root",
+          password,
+          verifyTls: false,
+        }),
+      });
+      if (!r.ok) throw new Error("Connection setup failed");
+      return (await r.json()).id as number;
+    },
+    {
+      port: process.env.CI ? 3306 : 33079,
+      password: process.env.CI ? "ci-disposable-root" : "",
+    },
+  );
+  await page.reload();
+  await page.getByRole("button", { name: "Editor layouts" }).click();
+  await page
+    .getByRole("combobox", { name: "Connection", exact: true })
+    .selectOption(String(id));
+  await page
+    .getByRole("combobox", { name: "Table", exact: true })
+    .selectOption("z_required_records");
+  await expect(page.getByLabel("id required", { exact: true })).toBeDisabled();
+  await page.getByLabel("title required", { exact: true }).check();
+  await page.getByRole("button", { name: "Save layout" }).click();
+  await expect(page.getByText("Layout saved.", { exact: true })).toBeVisible();
+  await page.reload();
+  await page.getByRole("button", { name: "Editor layouts" }).click();
+  await page
+    .getByRole("combobox", { name: "Connection", exact: true })
+    .selectOption(String(id));
+  await page
+    .getByRole("combobox", { name: "Table", exact: true })
+    .selectOption("z_required_records");
+  await expect(
+    page.getByLabel("title required", { exact: true }),
+  ).toBeChecked();
+  await page.getByRole("button", { name: "Data browser", exact: true }).click();
+  await page
+    .getByRole("combobox", { name: "Connection", exact: true })
+    .selectOption(String(id));
+  await page
+    .getByRole("combobox", { name: "Table", exact: true })
+    .selectOption("z_required_records");
+  await page.getByRole("button", { name: "Add record", exact: true }).click();
+  let dialog = page.getByRole("dialog");
+  await dialog.getByLabel("title", { exact: true }).fill("   ");
+  await dialog.getByRole("button", { name: "Save record" }).click();
+  await expect(dialog.getByRole("alert")).toHaveText("title is required.");
+  const title = "Required browser " + Date.now();
+  await dialog.getByLabel("title", { exact: true }).fill(title);
+  await dialog.getByRole("button", { name: "Save record" }).click();
+  await expect(dialog).toHaveCount(0);
+  const row = page
+    .getByRole("row")
+    .filter({ has: page.getByRole("cell", { name: title, exact: true }) });
+  await row.getByRole("button", { name: /Edit record/ }).click();
+  dialog = page.getByRole("dialog");
+  await dialog.getByLabel("title", { exact: true }).fill(" ");
+  await dialog.getByRole("button", { name: "Save record" }).click();
+  await expect(dialog.getByRole("alert")).toHaveText("title is required.");
+  await dialog.getByLabel("title", { exact: true }).fill(title);
+  await dialog.getByLabel("note", { exact: true }).fill("Partial update");
+  await dialog.getByRole("button", { name: "Save record" }).click();
+  await expect(dialog).toHaveCount(0);
+  await row.getByRole("button", { name: /Delete record/ }).click();
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Delete record", exact: true })
+    .click();
+  await expect(row).toHaveCount(0);
+});

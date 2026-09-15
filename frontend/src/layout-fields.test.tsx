@@ -125,3 +125,69 @@ it("renders joined values read-only and never submits them with source changes",
   fireEvent.click(screen.getByText("Save record"));
   await waitFor(() => expect(save).toHaveBeenCalledWith({ title: "After" }));
 });
+
+it("blocks whitespace and omitted required values on create and partial update", async () => {
+  const save = vi.fn().mockResolvedValue(undefined);
+  const required = { ...fields[1], hidden: false, required: true };
+  const { unmount } = render(
+    <RecordEditor
+      columns={[{ ...columns[1], nullable: true, default: "'default'" }]}
+      fields={[required]}
+      row={null}
+      close={() => {}}
+      save={save}
+    />,
+  );
+  fireEvent.submit(
+    screen.getByRole("button", { name: "Save record" }).closest("form")!,
+  );
+  await screen.findByText("Title is required.");
+  fireEvent.change(screen.getByLabelText("Title", { exact: true }), {
+    target: { value: "   " },
+  });
+  fireEvent.submit(
+    screen.getByRole("button", { name: "Save record" }).closest("form")!,
+  );
+  expect(save).not.toHaveBeenCalled();
+  unmount();
+  render(
+    <RecordEditor
+      columns={[columns[1]]}
+      fields={[required]}
+      row={{ values: { title: null }, version: "old" }}
+      close={() => {}}
+      save={save}
+    />,
+  );
+  fireEvent.submit(
+    screen.getByRole("button", { name: "Save record" }).closest("form")!,
+  );
+  await screen.findByText("Title is required.");
+  expect(save).not.toHaveBeenCalled();
+  fireEvent.change(screen.getByLabelText("Title", { exact: true }), {
+    target: { value: "Fixed" },
+  });
+  fireEvent.submit(
+    screen.getByRole("button", { name: "Save record" }).closest("form")!,
+  );
+  await waitFor(() => expect(save).toHaveBeenCalledWith({ title: "Fixed" }));
+});
+
+it("accepts unchecked required booleans as false rather than requiring a checked box", async () => {
+  const save = vi.fn().mockResolvedValue(undefined);
+  render(
+    <RecordEditor
+      columns={[{ ...columns[1], type: "tinyint", nullable: true }]}
+      fields={[
+        { ...fields[1], hidden: false, widget: "checkbox", required: true },
+      ]}
+      row={null}
+      close={() => {}}
+      save={save}
+    />,
+  );
+  fireEvent.submit(
+    screen.getByRole("button", { name: "Save record" }).closest("form")!,
+  );
+  await waitFor(() => expect(save).toHaveBeenCalledWith({ title: false }));
+});

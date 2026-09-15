@@ -218,7 +218,13 @@ public partial class DatabaseService(IDataProtectionProvider protection)
         };
     }
 
-    public async Task Mutate(MySqlConnection db, string table, RowMutation input, string operation)
+    public async Task Mutate(
+        MySqlConnection db,
+        string table,
+        RowMutation input,
+        string operation,
+        List<LayoutField>? fields = null
+    )
     {
         if (input.Values == null)
             throw new ApiError(400, "Values object required.");
@@ -238,6 +244,7 @@ public partial class DatabaseService(IDataProtectionProvider protection)
         await using var cmd = db.CreateCommand();
         cmd.Transaction = tx;
         string where = "";
+        Dictionary<string, object?>? current = null;
         if (operation != "create")
         {
             var keys = cols.Where(x => x.PrimaryKey).ToList();
@@ -256,9 +263,12 @@ public partial class DatabaseService(IDataProtectionProvider protection)
             var existing = await Read(cmd);
             if (existing.Count == 0)
                 throw new ApiError(404, "Record no longer exists.");
+            current = existing[0];
             if (input.Version != Version(existing[0]))
                 throw new ApiError(409, "This record changed. Refresh before saving.");
         }
+        if (operation != "delete")
+            LayoutRules.ValidateRequiredValues(fields ?? [], input.Values, current);
         var names = input.Values.Keys.ToList();
         for (int i = 0; i < names.Count; i++)
             cmd.Parameters.AddWithValue(

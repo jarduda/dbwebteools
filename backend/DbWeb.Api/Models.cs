@@ -56,7 +56,8 @@ public record LayoutField(
     List<DropdownOption>? Options = null,
     bool ShowInList = true,
     int? ListOrder = null,
-    JoinConfig? Join = null
+    JoinConfig? Join = null,
+    bool Required = false
 );
 
 public class AuditEntry
