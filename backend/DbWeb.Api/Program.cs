@@ -476,6 +476,10 @@ api.MapGet(
                 )
                     row.DisplayValues[field.Name] = label;
         }
+        LayoutRules.AddDropdownLabels(
+            DatabaseService.LayoutFields(layout?.FieldsJson),
+            result.Rows
+        );
         return result;
     }
 );
@@ -525,6 +529,8 @@ admin.MapPut(
                     "textarea",
                     "number",
                     "date",
+                    "datetime",
+                    "dropdown",
                     "checkbox",
                     "lookup",
                 }.Contains(x.Widget)
@@ -533,6 +539,7 @@ admin.MapPut(
             throw new ApiError(400, "Invalid layout fields.");
         foreach (var field in fields)
         {
+            LayoutRules.Validate(field, cols.Single(x => x.Name == field.Name));
             if (field.Widget == "lookup")
                 await s.ValidateLookup(
                     c,
@@ -625,6 +632,10 @@ foreach (var operation in new[] { "create", "update", "delete" })
             {
                 var layout = await db.Layouts.SingleOrDefaultAsync(x =>
                     x.ConnectionId == id && x.Table == table
+                );
+                LayoutRules.ValidateDropdownValues(
+                    DatabaseService.LayoutFields(layout?.FieldsJson),
+                    input.Values
                 );
                 foreach (
                     var field in DatabaseService

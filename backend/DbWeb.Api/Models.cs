@@ -52,7 +52,8 @@ public record LayoutField(
     bool Hidden,
     bool ReadOnly,
     string Widget,
-    LookupConfig? Lookup = null
+    LookupConfig? Lookup = null,
+    List<DropdownOption>? Options = null
 );
 
 public class AuditEntry
@@ -131,3 +132,5 @@ public record RecordPage(
     List<ColumnInfo> Columns,
     List<RecordRow> Rows
 );
+
+public record DropdownOption(string Key, string Display);

@@ -72,6 +72,7 @@ export type Field = {
   readOnly: boolean;
   widget: string;
   lookup?: Lookup | null;
+  options?: DropdownOption[] | null;
 };
 export type Grant = {
   userId: number;
@@ -89,3 +90,5 @@ export type Lookup = {
   displayColumn: string;
   searchColumns: string[];
 };
+
+export type DropdownOption = { key: string; display: string };

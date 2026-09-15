@@ -112,7 +112,11 @@ public partial class DatabaseService(IDataProtectionProvider protection)
         {
             var row = new Dictionary<string, object?>();
             for (int i = 0; i < r.FieldCount; i++)
-                row[r.GetName(i)] = Wire(r.GetValue(i));
+                row[r.GetName(i)] =
+                    r.GetValue(i) is DateTime date
+                    && r.GetDataTypeName(i).Equals("DATE", StringComparison.OrdinalIgnoreCase)
+                        ? date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)
+                        : Wire(r.GetValue(i));
             rows.Add(row);
         }
         return rows;
@@ -173,6 +177,37 @@ public partial class DatabaseService(IDataProtectionProvider protection)
         }
         if (e.ValueKind is JsonValueKind.Object or JsonValueKind.Array)
             throw new ApiError(400, "Field values must be scalar.");
+        if (col.Type is "date" or "datetime" or "timestamp")
+        {
+            var formats =
+                col.Type == "date"
+                    ? new[] { "yyyy-MM-dd" }
+                    : new[]
+                    {
+                        "yyyy-MM-dd",
+                        "yyyy-MM-dd'T'HH:mm",
+                        "yyyy-MM-dd'T'HH:mm:ss",
+                        "yyyy-MM-dd'T'HH:mm:ss.FFFFFF",
+                        "yyyy-MM-dd HH:mm:ss",
+                        "yyyy-MM-dd HH:mm:ss.FFFFFF",
+                    };
+            if (
+                e.ValueKind != JsonValueKind.String
+                || !DateTime.TryParseExact(
+                    e.GetString(),
+                    formats,
+                    CultureInfo.InvariantCulture,
+                    DateTimeStyles.None,
+                    out var date
+                )
+                || date.Year < 1000
+            )
+                throw new ApiError(
+                    400,
+                    $"{col.Name} requires a valid {(col.Type == "date" ? "date (YYYY-MM-DD)" : "date/time without a timezone offset")}."
+                );
+            return DateTime.SpecifyKind(date, DateTimeKind.Unspecified);
+        }
         if (col.Type.Contains("blob") || col.Type is "binary" or "varbinary")
             return Convert.FromBase64String(e.GetString() ?? "");
         return e.ValueKind switch

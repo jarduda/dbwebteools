@@ -9,7 +9,7 @@ A responsive MariaDB record-management workspace with a separate **ASP.NET Core 
 - Users, administrator/member roles, disable accounts, reset passwords, and revoke active sessions on account changes.
 - Multiple database connections with encrypted passwords, connection testing, verified TLS by default.
 - Deny-by-default per-user, per-table read/create/update/delete permissions enforced by the API.
-- Visual editing layouts: field labels, sections, order, control types, hidden/read-only fields.
+- Visual editing layouts: field labels, sections, order, Date/DateTime controls, keyed text dropdowns, hidden/read-only fields.
 - Configurable related-table lookups: searchable selection dialogs, friendly labels, and key-only storage.
 - Recent record-change activity without recording sensitive field values.
 - Responsive interface, keyboard-accessible dialogs, loading states, inline errors, and deletion confirmation.
@@ -55,6 +55,19 @@ For example, configure `orders.customer_id` to look up `customers.id`, display `
 Lookups target tables in the **same configured database connection** and require a non-null **single-column primary or unique key** with a compatible source type. Composite-key lookups and multi-column relation mappings are not supported. Existing composite-key CRUD is unchanged. Configuration is stored in existing layout JSON; no application-data migration is required.
 
 Users need **read permission on both source and related tables** to search or resolve related values, plus the usual source create/update permission to save. Without target read access, the grid retains the source key but never exposes related values. Invalid or missing selections are rejected by the API. Layouts do not create or alter database foreign-key constraints: keep actual foreign keys for transactional referential integrity, including changes made outside this application. Search treats `%` and `_` literally; it never executes user SQL.
+
+## Dates, timestamps, and dropdowns
+
+In **Administration → Editor layouts**, use these controls:
+
+- **Auto** selects Date for MariaDB `DATE` columns and DateTime for `DATETIME`/`TIMESTAMP` columns.
+- **Date** is available for all three temporal types. Changing a Date control on a `DATETIME`/`TIMESTAMP` stores the selected day at midnight. Simply opening or saving an unchanged field does not discard its original time.
+- **DateTime** is available for `DATETIME` and `TIMESTAMP`, with date, time, seconds, and milliseconds. Times are displayed and submitted in the database session timezone, without browser timezone conversion. MariaDB continues to apply its normal TIMESTAMP timezone behavior. Untouched values keep their full database precision, including microseconds; editing with the native picker uses millisecond precision. Choose Text when exact manual microsecond input is needed.
+- **Dropdown** is available for text columns. Add key/display pairs beneath the layout table (for example `draft` → `Draft document`, `ready` → `Ready to publish`). Each key and each display label must be unique within that dropdown, ignoring case. Define 1–200 options, with non-blank keys/labels of up to 256 characters and no surrounding whitespace. Save the layout.
+
+Dropdowns display labels in both the editor and record grid, while only keys are stored in MariaDB. Unknown submitted keys and duplicate configuration entries are rejected by the API. Existing values removed from the option list remain visible as unconfigured values and are not silently rewritten; choose a configured replacement to change them. Nullable fields can be cleared, and untouched fields on new records retain database defaults. Updating a record submits only changed fields, preserving unrelated timestamps and allowing database `ON UPDATE` behavior to operate normally.
+
+These settings use the existing layout JSON in `/var/lib/dbwebtools/app.db` on the hosted instance; no MariaDB schema changes or application metadata migrations are required.
 
 ## Build and test
 

@@ -10,7 +10,7 @@ using Xunit;
 
 namespace DbWeb.Tests;
 
-public class ApiTests
+public partial class ApiTests
 {
     private class Factory : WebApplicationFactory<Program>
     {
