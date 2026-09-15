@@ -563,6 +563,7 @@ admin.MapPut(
                     || cols.Any(col =>
                         col.Name.Equals(field.Name, StringComparison.OrdinalIgnoreCase)
                     )
+                    || field.Required
                     || !field.ReadOnly
                     || field.Lookup != null
                     || field.Options is { Count: > 0 }
@@ -719,16 +720,14 @@ foreach (var operation in new[] { "create", "update", "delete" })
         {
             var config = await Access(db, ctx, id, table, op);
             await using var c = await s.Open(config);
+            List<LayoutField> fields = [];
             if (op != "delete" && input.Values != null)
             {
                 var layout = await db.Layouts.SingleOrDefaultAsync(x =>
                     x.ConnectionId == id && x.Table == table
                 );
-                if (
-                    DatabaseService
-                        .LayoutFields(layout?.FieldsJson)
-                        .Any(f => f.Widget == "join" && input.Values.ContainsKey(f.Name))
-                )
+                fields = DatabaseService.LayoutFields(layout?.FieldsJson);
+                if (fields.Any(f => f.Widget == "join" && input.Values.ContainsKey(f.Name)))
                     throw new ApiError(
                         400,
                         "Joined fields are read-only and cannot be submitted as stored values."
@@ -763,7 +762,7 @@ foreach (var operation in new[] { "create", "update", "delete" })
                         );
                 }
             }
-            await s.Mutate(c, table, input, op);
+            await s.Mutate(c, table, input, op, fields);
             db.Audit.Add(
                 new()
                 {

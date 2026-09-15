@@ -78,6 +78,7 @@ export type Field = {
   showInList?: boolean;
   listOrder?: number | null;
   join?: Join | null;
+  required?: boolean;
 };
 export type Grant = {
   userId: number;

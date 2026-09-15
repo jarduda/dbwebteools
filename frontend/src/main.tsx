@@ -618,7 +618,19 @@ export function RecordEditor({
   save: (v: Record<string, unknown>) => Promise<void>;
 }) {
   const [values, setValues] = useState<Record<string, unknown>>(
-      row ? { ...row.values } : {},
+      row
+        ? { ...row.values }
+        : Object.fromEntries(
+            fields
+              .filter(
+                (f) =>
+                  f.required &&
+                  f.widget === "checkbox" &&
+                  !f.hidden &&
+                  !f.readOnly,
+              )
+              .map((f) => [f.name, false]),
+          ),
     ),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false);
@@ -675,6 +687,10 @@ export function RecordEditor({
       !(row && c.primaryKey) &&
       layout(c)?.widget !== "join",
   );
+  const emptyRequired = (c: Column) =>
+    layout(c)?.required &&
+    (values[c.name] == null ||
+      (typeof values[c.name] === "string" && !String(values[c.name]).trim()));
   return (
     <Modal title={row ? "Edit record" : "Add a record"} close={close}>
       <form
@@ -683,6 +699,10 @@ export function RecordEditor({
           setBusy(true);
           setError("");
           try {
+            for (const c of columns) {
+              if (emptyRequired(c))
+                throw new Error(`${layout(c)?.label || c.name} is required.`);
+            }
             for (const c of writable) {
               if (
                 layout(c)?.widget === "lookup" &&
@@ -752,6 +772,7 @@ export function RecordEditor({
                     <small>
                       {c.type}
                       {c.primaryKey ? " · Primary key" : ""}
+                      {l?.required ? " · Required" : ""}
                     </small>
                   </span>
                   {l?.widget === "join" ? (
@@ -777,7 +798,7 @@ export function RecordEditor({
                       lookup={l.lookup}
                       value={values[c.name]}
                       disabled={disabled}
-                      nullable={c.nullable}
+                      nullable={c.nullable && !l.required}
                       change={(key) =>
                         setValues((v) => ({ ...v, [c.name]: key }))
                       }
@@ -789,8 +810,8 @@ export function RecordEditor({
                       value={String(values[c.name] ?? "")}
                       required={
                         !disabled &&
-                        !c.nullable &&
-                        (row != null || c.default == null)
+                        (!!l?.required ||
+                          (!c.nullable && (row != null || c.default == null)))
                       }
                       onChange={(e) =>
                         setValues((old) => {
@@ -804,11 +825,13 @@ export function RecordEditor({
                       }
                     >
                       <option value="">
-                        {c.nullable
-                          ? "No value (NULL)"
-                          : !row && c.default != null
-                            ? "Use database default"
-                            : "Choose a value…"}
+                        {l?.required
+                          ? "Choose a value…"
+                          : c.nullable
+                            ? "No value (NULL)"
+                            : !row && c.default != null
+                              ? "Use database default"
+                              : "Choose a value…"}
                       </option>
                       {values[c.name] != null &&
                         values[c.name] !== "" &&
@@ -825,6 +848,11 @@ export function RecordEditor({
                     </select>
                   ) : l?.widget === "textarea" ? (
                     <textarea
+                      aria-label={l?.label || c.name}
+                      required={
+                        !disabled &&
+                        (!!l?.required || (!c.nullable && c.default == null))
+                      }
                       disabled={disabled}
                       value={String(values[c.name] ?? "")}
                       onChange={(e) =>
@@ -862,13 +890,19 @@ export function RecordEditor({
                       placeholder={
                         c.autoIncrement
                           ? "Generated automatically"
-                          : c.default != null
-                            ? `Default: ${c.default}`
-                            : c.nullable
-                              ? "Optional"
-                              : "Required"
+                          : l?.required
+                            ? "Required"
+                            : c.default != null
+                              ? `Default: ${c.default}`
+                              : c.nullable
+                                ? "Optional"
+                                : "Required"
                       }
-                      required={!disabled && !c.nullable && c.default == null}
+                      required={
+                        !disabled &&
+                        widget !== "checkbox" &&
+                        (!!l?.required || (!c.nullable && c.default == null))
+                      }
                       onChange={(e) =>
                         setValues((old) => {
                           const next = { ...old };
@@ -903,6 +937,7 @@ export function RecordEditor({
                     </small>
                   )}
                   {c.nullable &&
+                    !l?.required &&
                     !disabled &&
                     !["lookup", "dropdown"].includes(widget) && (
                       <span className="null-toggle">
@@ -1025,6 +1060,7 @@ function Admin({
       delete: false,
     }),
     [fields, setFields] = useState<Field[]>([]),
+    [layoutColumns, setLayoutColumns] = useState<Column[]>([]),
     [layoutLoading, setLayoutLoading] = useState(false),
     [message, setMessage] = useState(""),
     [busy, setBusy] = useState(false);
@@ -1080,7 +1116,8 @@ function Admin({
         ),
       ])
         .then(([p, s]) => {
-          if (active)
+          if (active) {
+            setLayoutColumns(p.columns);
             setFields([
               ...p.columns.map(
                 (c, i) =>
@@ -1096,6 +1133,7 @@ function Admin({
               ),
               ...s.fields.filter((f) => f.widget === "join"),
             ]);
+          }
         })
         .catch((e) => {
           if (active) fail(e);
@@ -1358,7 +1396,9 @@ function Admin({
               <p>
                 Customize labels, sections, order, visibility, and field
                 controls. List visibility is independent of editor visibility.
-                Layouts affect presentation, not authorization.
+                Required fields must be filled before creating or updating a
+                record. Hidden, read-only, and generated fields cannot be marked
+                required.
               </p>
               <div className="table-scroll">
                 <table>
@@ -1371,6 +1411,7 @@ function Admin({
                       <th>Control</th>
                       <th>Hide in editor</th>
                       <th>Read-only</th>
+                      <th>Required</th>
                       <th>Show in list</th>
                       <th>List order</th>
                     </tr>
@@ -1477,6 +1518,12 @@ function Admin({
                                       j === i
                                         ? {
                                             ...x,
+                                            required:
+                                              (k === "hidden" ||
+                                                k === "readOnly") &&
+                                              e.target.checked
+                                                ? false
+                                                : x.required,
                                             [k]:
                                               k === "hidden" || k === "readOnly"
                                                 ? e.target.checked
@@ -1492,6 +1539,32 @@ function Admin({
                             )}
                           </td>
                         ))}
+                        <td>
+                          <input
+                            type="checkbox"
+                            aria-label={`${f.name} required`}
+                            checked={!!f.required}
+                            disabled={
+                              f.hidden ||
+                              f.readOnly ||
+                              f.widget === "join" ||
+                              layoutColumns.some(
+                                (c) =>
+                                  c.name === f.name &&
+                                  (c.generated || c.autoIncrement),
+                              )
+                            }
+                            onChange={(e) =>
+                              setFields((old) =>
+                                old.map((x) =>
+                                  x.name === f.name
+                                    ? { ...x, required: e.target.checked }
+                                    : x,
+                                ),
+                              )
+                            }
+                          />
+                        </td>
                         <td>
                           <input
                             type="checkbox"

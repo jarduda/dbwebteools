@@ -6,6 +6,17 @@ public static class LayoutRules
 {
     public static void Validate(LayoutField field, ColumnInfo column)
     {
+        if (
+            field.Required
+            && (
+                field.Hidden
+                || field.ReadOnly
+                || column.Generated
+                || column.AutoIncrement
+                || field.Widget == "join"
+            )
+        )
+            throw new ApiError(400, "Required fields must be visible, editable stored columns.");
         if (field.Widget == "datetime" && column.Type is not "datetime" and not "timestamp")
             throw new ApiError(400, "DateTime controls require a DATETIME or TIMESTAMP column.");
         if (
@@ -57,6 +68,33 @@ public static class LayoutRules
                 400,
                 "Dropdown keys and display labels must each be unique (ignoring case)."
             );
+    }
+
+    public static void ValidateRequiredValues(
+        IEnumerable<LayoutField> fields,
+        Dictionary<string, JsonElement> values,
+        Dictionary<string, object?>? existing
+    )
+    {
+        foreach (var field in fields.Where(f => f.Required))
+        {
+            var empty = values.TryGetValue(field.Name, out var value)
+                ? value.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined
+                    || (
+                        value.ValueKind == JsonValueKind.String
+                        && string.IsNullOrWhiteSpace(value.GetString())
+                    )
+                : existing == null
+                    || !existing.TryGetValue(field.Name, out var stored)
+                    || stored == null
+                    || stored is DBNull
+                    || (stored is string text && string.IsNullOrWhiteSpace(text));
+            if (empty)
+                throw new ApiError(
+                    400,
+                    $"{(string.IsNullOrWhiteSpace(field.Label) ? field.Name : field.Label)} is required."
+                );
+        }
     }
 
     public static void ValidateDropdownValues(

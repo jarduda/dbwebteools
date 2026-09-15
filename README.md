@@ -122,3 +122,9 @@ Layouts are presentation settings, **not column-level security**. Table grants p
 Every pull request runs release builds, backend authorization/CSRF tests, frontend editor tests, and real MariaDB CRUD/concurrency validation. Successful builds upload separate deployment artifacts. Every PR also validates both container builds. A version tag (`v*`) validates first, then builds and publishes commit-SHA-tagged API/web images to GitHub Container Registry. No external production deployment target is assumed.
 
 Use feature branches and pull requests for subsequent changes; never commit credentials or application data. Configure branch protection to require the `validate` job before merging.
+
+### Required fields
+
+In **Administration → Editor layouts**, check **Required** for fields that must be filled and save the layout. Required fields are marked in the record editor. NULL, missing values, empty strings, and whitespace-only strings are rejected; zero and false are valid. The API enforces the rule as well as the form. On updates, it checks submitted values together with the locked current record, so an unchanged empty required field must be repaired before other edits can be saved. Deletes are unaffected.
+
+Required fields must be visible, editable stored columns; generated, auto-increment, hidden, read-only, and joined fields cannot be marked required. Hiding a field or marking it read-only clears its Required option. On creation, a required value must be supplied explicitly, even if the database defines a default. Existing layouts default to not required; database NOT NULL constraints still apply. Configuration is stored in existing layout JSON, without schema changes.
