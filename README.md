@@ -75,6 +75,8 @@ List settings and joins are stored in existing layout JSON. No schema migration 
 
 ## Dates, timestamps, and dropdowns
 
+Record search matches configured dropdown display labels using case-insensitive partial text, as well as stored keys and other text columns. Label matches respect layout filters, sorting, and pagination; stored values are unchanged.
+
 In **Administration → Editor layouts**, use these controls:
 
 - **Auto** selects Date for MariaDB `DATE` columns and DateTime for `DATETIME`/`TIMESTAMP` columns.

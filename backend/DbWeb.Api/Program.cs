@@ -450,7 +450,8 @@ api.MapGet(
             sort,
             descending ?? false,
             search,
-            definition.View
+            definition.View,
+            definition.Fields
         );
         foreach (
             var field in DatabaseService
