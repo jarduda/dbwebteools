@@ -56,6 +56,23 @@ Lookups target tables in the **same configured database connection** and require
 
 Users need **read permission on both source and related tables** to search or resolve related values, plus the usual source create/update permission to save. Without target read access, the grid retains the source key but never exposes related values. Invalid or missing selections are rejected by the API. Layouts do not create or alter database foreign-key constraints: keep actual foreign keys for transactional referential integrity, including changes made outside this application. Search treats `%` and `_` literally; it never executes user SQL.
 
+## List fields and read-only joined fields
+
+In **Administration → Editor layouts**, use **Show in list** to select record-list columns and **List order** to order them. The field label is also used as the list heading. These settings are independent of **Hide in editor** and editor **Order**. Existing layouts without list settings keep all columns visible. Hidden primary keys remain available internally for correct editing/deletion. Selecting no list fields shows an explicit empty-column notice, without changing data access permissions.
+
+Choose **Add joined field** to display a value from another table without adding a physical database column. Configure:
+
+1. **Local key column**, for example `orders.customer_id`.
+2. **Related table** and **Related unique key**, for example `customers.id`.
+3. **Displayed value**, for example `customers.email`.
+4. A label such as *Customer email*, editor visibility/order, and list visibility/order.
+
+Joined fields are always read-only. They are available in the record editor and optionally the list, refresh when the local key changes (including lookup selections), and are never sent as stored values. The API rejects attempts to write virtual joined fields. A missing match or NULL local key displays NULL; without related-table read permission the value displays **Unavailable**, and no related data is returned.
+
+Joins use existing tables in the **same connection**, a compatible local column and a non-null **single-column primary/unique target key**. Up to 20 virtual joined fields are supported per layout. Multiple fields may display different values from the same related row. One-to-many joins, composite join keys, join chains, custom SQL expressions, and joined-field sorting/searching are not supported. Source rows are paginated first; bounded LEFT JOIN queries resolve their related values without dropping or duplicating records. Source concurrency versions depend only on source data, not related display values.
+
+List settings and joins are stored in existing layout JSON. No schema migration is required. List/editor visibility is presentation configuration, **not column-level security**; existing table permissions still govern access.
+
 ## Dates, timestamps, and dropdowns
 
 In **Administration → Editor layouts**, use these controls:

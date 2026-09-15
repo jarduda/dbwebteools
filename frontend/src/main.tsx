@@ -30,6 +30,7 @@ import {
   type Grant,
 } from "./api";
 import "./style.css";
+import { JoinConfiguration, listColumns } from "./layout-fields";
 import {
   DropdownConfiguration,
   dropdownError,
@@ -383,6 +384,15 @@ function Records({
         .map((c) => [c.name, r.values[c.name]]),
     );
   const mutable = !!data?.columns.some((c) => c.primaryKey);
+  const displayColumns =
+    settings && data
+      ? listColumns(
+          [...data.columns, ...(data.joinedColumns || [])],
+          settings.fields,
+        )
+      : [];
+  const joined = (name: string) =>
+    settings?.fields.some((f) => f.name === name && f.widget === "join");
   return (
     <>
       <section className="card">
@@ -421,21 +431,31 @@ function Records({
             This table has no primary key and is read-only.
           </div>
         )}
+        {settings && data && displayColumns.length === 0 && (
+          <div className="notice">
+            No list fields selected. Configure visible fields in Editor layouts.
+          </div>
+        )}
         <div className="table-scroll" aria-busy={busy}>
           <table>
             <thead>
               <tr>
-                {data?.columns.map((c) => (
+                {displayColumns.map((c) => (
                   <th key={c.name}>
                     <button
+                      disabled={joined(c.name)}
+                      title={
+                        joined(c.name) ? "Read-only joined field" : undefined
+                      }
                       onClick={() => {
                         setSort(c.name);
                         setDesc(sort === c.name ? !desc : false);
                       }}
                     >
-                      {c.name}
+                      {settings?.fields.find((f) => f.name === c.name)?.label ||
+                        c.name}
                       {c.primaryKey && <span className="key">PK</span>}
-                      <ArrowUpDown size={12} />
+                      {!joined(c.name) && <ArrowUpDown size={12} />}
                     </button>
                   </th>
                 ))}
@@ -445,9 +465,17 @@ function Records({
             <tbody>
               {data?.rows.map((r, i) => (
                 <tr key={i}>
-                  {data.columns.map((c) => (
+                  {displayColumns.map((c) => (
                     <td key={c.name}>
-                      {r.values[c.name] == null ? (
+                      {joined(c.name) ? (
+                        !(c.name in (r.joinedValues || {})) ? (
+                          <span className="null">Unavailable</span>
+                        ) : r.joinedValues?.[c.name] == null ? (
+                          <span className="null">NULL</span>
+                        ) : (
+                          cellText(r.joinedValues[c.name], c)
+                        )
+                      ) : r.values[c.name] == null ? (
                         <span className="null">NULL</span>
                       ) : (
                         (r.displayValues?.[c.name] ??
@@ -523,7 +551,7 @@ function Records({
       {editing !== undefined && data && (
         <RecordEditor
           base={base}
-          columns={data.columns}
+          columns={[...data.columns, ...(data.joinedColumns || [])]}
           fields={settings?.fields || []}
           row={editing}
           close={() => setEditing(undefined)}
@@ -594,9 +622,58 @@ export function RecordEditor({
     ),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false);
+  const [joinedValues, setJoinedValues] = useState<Record<string, unknown>>(
+    row?.joinedValues || {},
+  );
+  const [joinBusy, setJoinBusy] = useState(false),
+    [joinError, setJoinError] = useState("");
+  const joinConfig = JSON.stringify(
+    fields.filter((f) => f.widget === "join" && f.join),
+  );
+  const joinRequest = JSON.stringify(
+    Object.fromEntries(
+      fields
+        .filter((f) => f.widget === "join" && f.join)
+        .map((f) => [
+          f.join!.sourceColumn,
+          values[f.join!.sourceColumn] ?? null,
+        ]),
+    ),
+  );
+  useEffect(() => {
+    let active = true;
+    if (joinConfig === "[]" || !base) return;
+    setJoinBusy(true);
+    setJoinError("");
+    setJoinedValues({});
+    const timer = setTimeout(() => {
+      api<{ values: Record<string, unknown> }>(
+        base + "/joins/resolve",
+        "POST",
+        { values: JSON.parse(joinRequest) },
+      )
+        .then((r) => {
+          if (active) setJoinedValues(r.values);
+        })
+        .catch((e) => {
+          if (active) setJoinError(e.message);
+        })
+        .finally(() => {
+          if (active) setJoinBusy(false);
+        });
+    }, 200);
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
+  }, [base, joinConfig, joinRequest]);
   const layout = (c: Column) => fields.find((f) => f.name === c.name);
   const writable = columns.filter(
-    (c) => !c.generated && !c.autoIncrement && !(row && c.primaryKey),
+    (c) =>
+      !c.generated &&
+      !c.autoIncrement &&
+      !(row && c.primaryKey) &&
+      layout(c)?.widget !== "join",
   );
   return (
     <Modal title={row ? "Edit record" : "Add a record"} close={close}>
@@ -643,6 +720,11 @@ export function RecordEditor({
             {error}
           </div>
         )}
+        {joinError && (
+          <div className="alert" role="alert">
+            Related fields: {joinError}
+          </div>
+        )}
         <div className="editor-grid">
           {[...columns]
             .sort(
@@ -672,7 +754,22 @@ export function RecordEditor({
                       {c.primaryKey ? " · Primary key" : ""}
                     </small>
                   </span>
-                  {l?.widget === "lookup" && l.lookup ? (
+                  {l?.widget === "join" ? (
+                    <input
+                      aria-label={l.label || c.name}
+                      readOnly
+                      aria-readonly="true"
+                      value={
+                        joinBusy
+                          ? "Loading…"
+                          : !(c.name in joinedValues)
+                            ? "Unavailable"
+                            : joinedValues[c.name] == null
+                              ? "NULL"
+                              : cellText(joinedValues[c.name], c)
+                      }
+                    />
+                  ) : l?.widget === "lookup" && l.lookup ? (
                     <LookupInput
                       base={base}
                       name={c.name}
@@ -984,8 +1081,8 @@ function Admin({
       ])
         .then(([p, s]) => {
           if (active)
-            setFields(
-              p.columns.map(
+            setFields([
+              ...p.columns.map(
                 (c, i) =>
                   s.fields.find((f) => f.name === c.name) || {
                     name: c.name,
@@ -997,7 +1094,8 @@ function Admin({
                     widget: "auto",
                   },
               ),
-            );
+              ...s.fields.filter((f) => f.widget === "join"),
+            ]);
         })
         .catch((e) => {
           if (active) fail(e);
@@ -1256,10 +1354,11 @@ function Admin({
             </>
           ) : (
             <>
-              <h2>Record editing layout</h2>
+              <h2>Record and list layout</h2>
               <p>
                 Customize labels, sections, order, visibility, and field
-                controls. Layouts affect presentation, not authorization.
+                controls. List visibility is independent of editor visibility.
+                Layouts affect presentation, not authorization.
               </p>
               <div className="table-scroll">
                 <table>
@@ -1270,14 +1369,21 @@ function Admin({
                       <th>Section</th>
                       <th>Order</th>
                       <th>Control</th>
-                      <th>Hidden</th>
+                      <th>Hide in editor</th>
                       <th>Read-only</th>
+                      <th>Show in list</th>
+                      <th>List order</th>
                     </tr>
                   </thead>
                   <tbody>
                     {fields.map((f, i) => (
                       <tr key={f.name}>
-                        <td>{f.name}</td>
+                        <td>
+                          {f.name}
+                          {f.widget === "join" && (
+                            <span className="badge">Joined</span>
+                          )}
+                        </td>
                         {(
                           [
                             "label",
@@ -1293,6 +1399,7 @@ function Admin({
                               <select
                                 aria-label={`${f.name} control`}
                                 value={f[k]}
+                                disabled={f.widget === "join"}
                                 onChange={(e) =>
                                   setFields(
                                     fields.map((x, j) =>
@@ -1314,6 +1421,11 @@ function Admin({
                                   )
                                 }
                               >
+                                {f.widget === "join" && (
+                                  <option value="join">
+                                    Joined (read-only)
+                                  </option>
+                                )}
                                 {[
                                   "auto",
                                   "text",
@@ -1339,6 +1451,9 @@ function Admin({
                             ) : (
                               <input
                                 aria-label={`${f.name} ${k}`}
+                                disabled={
+                                  f.widget === "join" && k === "readOnly"
+                                }
                                 type={
                                   k === "hidden" || k === "readOnly"
                                     ? "checkbox"
@@ -1377,11 +1492,106 @@ function Admin({
                             )}
                           </td>
                         ))}
+                        <td>
+                          <input
+                            type="checkbox"
+                            aria-label={`${f.name} showInList`}
+                            checked={f.showInList !== false}
+                            onChange={(e) =>
+                              setFields((old) =>
+                                old.map((x) =>
+                                  x.name === f.name
+                                    ? { ...x, showInList: e.target.checked }
+                                    : x,
+                                ),
+                              )
+                            }
+                          />
+                        </td>
+                        <td>
+                          <input
+                            type="number"
+                            aria-label={`${f.name} listOrder`}
+                            value={f.listOrder ?? f.order}
+                            onChange={(e) =>
+                              setFields((old) =>
+                                old.map((x) =>
+                                  x.name === f.name
+                                    ? {
+                                        ...x,
+                                        listOrder: Number(e.target.value),
+                                      }
+                                    : x,
+                                ),
+                              )
+                            }
+                          />
+                        </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
+              <button
+                type="button"
+                disabled={
+                  layoutLoading ||
+                  !fields.length ||
+                  fields.filter((f) => f.widget === "join").length >= 20
+                }
+                onClick={() => {
+                  let n = 1;
+                  while (
+                    fields.some((f) => f.name.toLowerCase() === `joined_${n}`)
+                  )
+                    n++;
+                  setFields((old) => [
+                    ...old,
+                    {
+                      name: `joined_${n}`,
+                      label: "Related value",
+                      section: "",
+                      order: old.length,
+                      hidden: false,
+                      readOnly: true,
+                      widget: "join",
+                      showInList: true,
+                      listOrder: old.length,
+                      join: {
+                        sourceColumn: "",
+                        table: "",
+                        keyColumn: "",
+                        valueColumn: "",
+                      },
+                    },
+                  ]);
+                }}
+              >
+                Add joined field
+              </button>
+              {fields
+                .filter((f) => f.widget === "join")
+                .map((f) => (
+                  <JoinConfiguration
+                    key={`${connection}/${table}/${f.name}`}
+                    field={f}
+                    connection={connection}
+                    tables={tables}
+                    sources={fields
+                      .filter((x) => x.widget !== "join")
+                      .map((x) => x.name)}
+                    change={(join) =>
+                      setFields((old) =>
+                        old.map((x) =>
+                          x.name === f.name ? { ...x, join } : x,
+                        ),
+                      )
+                    }
+                    remove={() =>
+                      setFields((old) => old.filter((x) => x.name !== f.name))
+                    }
+                  />
+                ))}
               {fields
                 .filter((f) => f.widget === "dropdown")
                 .map((f) => (
@@ -1423,6 +1633,14 @@ function Admin({
                   busy ||
                   layoutLoading ||
                   fields.length === 0 ||
+                  fields.some(
+                    (f) =>
+                      f.widget === "join" &&
+                      (!f.join?.sourceColumn ||
+                        !f.join?.table ||
+                        !f.join?.keyColumn ||
+                        !f.join?.valueColumn),
+                  ) ||
                   fields.some(
                     (f) =>
                       f.widget === "dropdown" &&

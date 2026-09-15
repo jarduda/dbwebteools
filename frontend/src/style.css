@@ -967,3 +967,16 @@ footer {
     border-bottom: 1px solid #dce3ed;
   }
 }
+.joined-config p {
+  margin: 0;
+  align-self: center;
+}
+.joined-config button {
+  align-self: end;
+}
+.settings-card input[type="number"] {
+  max-width: 100px;
+}
+input[aria-readonly="true"] {
+  background: #f3f6f8;
+}

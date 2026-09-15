@@ -480,6 +480,18 @@ api.MapGet(
             DatabaseService.LayoutFields(layout?.FieldsJson),
             result.Rows
         );
+        result.JoinedColumns.AddRange(
+            await PopulateJoins(
+                db,
+                ctx,
+                id,
+                c,
+                s,
+                DatabaseService.LayoutFields(layout?.FieldsJson),
+                result.Columns,
+                result.Rows
+            )
+        );
         return result;
     }
 );
@@ -519,9 +531,11 @@ admin.MapPut(
         );
         var cols = await s.Columns(c, table);
         if (
-            fields.Select(x => x.Name).Distinct().Count() != fields.Count
+            fields.Select(x => x.Name).Distinct(StringComparer.OrdinalIgnoreCase).Count()
+                != fields.Count
+            || fields.Count(x => x.Widget == "join") > 20
             || fields.Any(x =>
-                !cols.Any(y => y.Name == x.Name)
+                (x.Widget != "join" && !cols.Any(y => y.Name == x.Name))
                 || !new[]
                 {
                     "auto",
@@ -533,12 +547,39 @@ admin.MapPut(
                     "dropdown",
                     "checkbox",
                     "lookup",
+                    "join",
                 }.Contains(x.Widget)
             )
         )
             throw new ApiError(400, "Invalid layout fields.");
         foreach (var field in fields)
         {
+            if (field.Widget == "join")
+            {
+                if (
+                    string.IsNullOrWhiteSpace(field.Name)
+                    || field.Name.Length > 100
+                    || field.Name != field.Name.Trim()
+                    || cols.Any(col =>
+                        col.Name.Equals(field.Name, StringComparison.OrdinalIgnoreCase)
+                    )
+                    || !field.ReadOnly
+                    || field.Lookup != null
+                    || field.Options is { Count: > 0 }
+                )
+                    throw new ApiError(
+                        400,
+                        "Joined fields must have a unique virtual name, be read-only, and have no editable control configuration."
+                    );
+                await s.ValidateJoin(
+                    c,
+                    field.Join ?? throw new ApiError(400, "Join configuration required."),
+                    cols
+                );
+                continue;
+            }
+            if (field.Join != null)
+                throw new ApiError(400, "Only joined fields may define a join.");
             LayoutRules.Validate(field, cols.Single(x => x.Name == field.Name));
             if (field.Widget == "lookup")
                 await s.ValidateLookup(
@@ -612,6 +653,56 @@ api.MapGet(
         return Results.Ok(await s.LookupSearch(c, lookup, page ?? 1, size ?? 25, search));
     }
 );
+api.MapPost(
+    "/{id:int}/tables/{table}/joins/resolve",
+    async (int id, string table, JoinInput input, AppDb db, DatabaseService s, HttpContext ctx) =>
+    {
+        var config = await Access(db, ctx, id, table, "read");
+        await using var c = await s.Open(config);
+        var columns = await s.Columns(c, table);
+        if (
+            input.Values == null
+            || input.Values.Any(v =>
+                !columns.Any(col => col.Name == v.Key)
+                || v.Value.ValueKind
+                    is not JsonValueKind.String
+                        and not JsonValueKind.Number
+                        and not JsonValueKind.Null
+                        and not JsonValueKind.True
+                        and not JsonValueKind.False
+            )
+        )
+            throw new ApiError(400, "Provide scalar values for existing source columns.");
+        var layout = await db.Layouts.SingleOrDefaultAsync(x =>
+            x.ConnectionId == id && x.Table == table
+        );
+        var row = new RecordRow(
+            input.Values.ToDictionary(
+                v => v.Key,
+                v =>
+                    v.Value.ValueKind switch
+                    {
+                        JsonValueKind.Null => null,
+                        JsonValueKind.True => (object?)1,
+                        JsonValueKind.False => 0,
+                        _ => v.Value.ToString(),
+                    }
+            ),
+            ""
+        );
+        var joinedColumns = await PopulateJoins(
+            db,
+            ctx,
+            id,
+            c,
+            s,
+            DatabaseService.LayoutFields(layout?.FieldsJson),
+            columns,
+            [row]
+        );
+        return new { values = row.JoinedValues, columns = joinedColumns };
+    }
+);
 foreach (var operation in new[] { "create", "update", "delete" })
 {
     var op = operation;
@@ -633,6 +724,15 @@ foreach (var operation in new[] { "create", "update", "delete" })
                 var layout = await db.Layouts.SingleOrDefaultAsync(x =>
                     x.ConnectionId == id && x.Table == table
                 );
+                if (
+                    DatabaseService
+                        .LayoutFields(layout?.FieldsJson)
+                        .Any(f => f.Widget == "join" && input.Values.ContainsKey(f.Name))
+                )
+                    throw new ApiError(
+                        400,
+                        "Joined fields are read-only and cannot be submitted as stored values."
+                    );
                 LayoutRules.ValidateDropdownValues(
                     DatabaseService.LayoutFields(layout?.FieldsJson),
                     input.Values
@@ -678,6 +778,56 @@ foreach (var operation in new[] { "create", "update", "delete" })
     );
 }
 app.Run();
+static async Task<List<ColumnInfo>> PopulateJoins(
+    AppDb db,
+    HttpContext ctx,
+    int id,
+    MySqlConnection c,
+    DatabaseService service,
+    List<LayoutField> fields,
+    List<ColumnInfo> sourceColumns,
+    List<RecordRow> rows
+)
+{
+    var result = new List<ColumnInfo>();
+    foreach (var field in fields.Where(f => f.Widget == "join" && f.Join != null))
+    {
+        var join = field.Join!;
+        try
+        {
+            await Access(db, ctx, id, join.Table, "read");
+        }
+        catch (ApiError e) when (e.Status == 403)
+        {
+            result.Add(new(field.Name, "text", true, false, true, false, null));
+            continue;
+        }
+        var column = await service.ValidateJoin(c, join, sourceColumns);
+        result.Add(
+            column with
+            {
+                Name = field.Name,
+                Nullable = true,
+                PrimaryKey = false,
+                Generated = true,
+                AutoIncrement = false,
+                Default = null,
+            }
+        );
+        var joined = await service.JoinValues(
+            c,
+            join,
+            rows.Select(r => r.Values.GetValueOrDefault(join.SourceColumn))
+        );
+        foreach (var row in rows)
+            row.JoinedValues[field.Name] = row.Values.GetValueOrDefault(join.SourceColumn)
+                is { } key
+                ? joined.GetValueOrDefault(DatabaseService.KeyText(key))
+                : null;
+    }
+    return result;
+}
+
 static void ValidateUser(UserInput i, bool create)
 {
     if (string.IsNullOrWhiteSpace(i.Username) || i.Username.Length > 100)
