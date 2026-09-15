@@ -64,6 +64,8 @@ export type Page = {
   columns: Column[];
   rows: Row[];
   joinedColumns?: Column[];
+  sort?: string;
+  descending?: boolean;
 };
 export type Field = {
   name: string;
@@ -104,4 +106,17 @@ export type Join = {
   table: string;
   keyColumn: string;
   valueColumn: string;
+};
+
+export type ListFilter = {
+  column: string;
+  operator: string;
+  value?: string | null;
+};
+export type ListView = {
+  label?: string | null;
+  sort?: string | null;
+  descending?: boolean;
+  match?: "all" | "any";
+  filters?: ListFilter[] | null;
 };

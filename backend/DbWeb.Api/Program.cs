@@ -438,6 +438,10 @@ api.MapGet(
     {
         var config = await Access(db, ctx, id, table, "read");
         await using var c = await s.Open(config);
+        var layout = await db.Layouts.SingleOrDefaultAsync(x =>
+            x.ConnectionId == id && x.Table == table
+        );
+        var definition = DatabaseService.Layout(layout?.FieldsJson);
         var result = await s.List(
             c,
             table,
@@ -445,10 +449,8 @@ api.MapGet(
             size ?? 25,
             sort,
             descending ?? false,
-            search
-        );
-        var layout = await db.Layouts.SingleOrDefaultAsync(x =>
-            x.ConnectionId == id && x.Table == table
+            search,
+            definition.View
         );
         foreach (
             var field in DatabaseService
@@ -518,18 +520,25 @@ api.MapGet(
         return new
         {
             grant,
-            fields = JsonSerializer.Deserialize<List<LayoutField>>(l?.FieldsJson ?? "[]"),
+            fields = DatabaseService.LayoutFields(l?.FieldsJson),
+            view = DatabaseService.Layout(l?.FieldsJson).View ?? new ListView(),
         };
     }
 );
 admin.MapPut(
     "/connections/{id:int}/tables/{table}/layout",
-    async (int id, string table, List<LayoutField> fields, AppDb db, DatabaseService s) =>
+    async (int id, string table, JsonElement input, AppDb db, DatabaseService s) =>
     {
         await using var c = await s.Open(
             await db.Connections.FindAsync(id) ?? throw new ApiError(404, "Connection not found.")
         );
+        var definition = DatabaseService.ParseLayout(input);
+        var fields = definition.Fields;
         var cols = await s.Columns(c, table);
+        using var validation = c.CreateCommand();
+        DatabaseService.ViewPredicate(validation, definition.View, cols);
+        if (fields.Any(f => f.Label == null || f.Label.Length > 150))
+            throw new ApiError(400, "Field labels must be at most 150 characters.");
         if (
             fields.Select(x => x.Name).Distinct(StringComparer.OrdinalIgnoreCase).Count()
                 != fields.Count
@@ -599,7 +608,10 @@ admin.MapPut(
             l = new() { ConnectionId = id, Table = table };
             db.Layouts.Add(l);
         }
-        l.FieldsJson = JsonSerializer.Serialize(fields);
+        // Legacy array clients edit fields without erasing newer list-view settings.
+        if (input.ValueKind == JsonValueKind.Array)
+            definition = definition with { View = DatabaseService.Layout(l.FieldsJson).View };
+        l.FieldsJson = JsonSerializer.Serialize(definition);
         await db.SaveChangesAsync();
         return Results.NoContent();
     }

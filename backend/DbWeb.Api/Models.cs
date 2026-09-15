@@ -139,6 +139,8 @@ public record RecordPage(
 )
 {
     public List<ColumnInfo> JoinedColumns { get; } = new();
+    public string? Sort { get; init; }
+    public bool Descending { get; init; }
 }
 
 public record DropdownOption(string Key, string Display);

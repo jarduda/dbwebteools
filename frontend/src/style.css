@@ -980,3 +980,60 @@ footer {
 input[aria-readonly="true"] {
   background: #f3f6f8;
 }
+.list-view-editor {
+  margin: 20px 0;
+  padding: 20px;
+  border: 1px solid #dce3ed;
+  border-radius: 12px;
+  background: #f8faf9;
+}
+.list-view-editor h3 {
+  margin-top: 0;
+}
+.list-view-settings {
+  display: grid;
+  grid-template-columns: 2fr 2fr 1fr;
+  gap: 14px;
+}
+.list-view-editor label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.list-view-editor input,
+.list-view-editor select {
+  width: 100%;
+  min-width: 0;
+}
+.filter-match {
+  max-width: 300px;
+  margin: 16px 0;
+}
+.list-filter {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1.3fr auto;
+  align-items: end;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.null-filter-hint {
+  padding: 12px 0;
+  color: #64756e;
+}
+.filter-preview {
+  overflow-wrap: anywhere;
+}
+.reset-sort {
+  margin: 8px 16px;
+}
+@media (max-width: 700px) {
+  .list-view-settings,
+  .list-filter {
+    grid-template-columns: 1fr;
+  }
+  .list-filter {
+    border-bottom: 1px solid #dce3ed;
+    padding-bottom: 14px;
+  }
+}
