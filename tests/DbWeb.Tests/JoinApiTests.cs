@@ -24,7 +24,7 @@ public partial class ApiTests
         var source = "source_" + Guid.NewGuid().ToString("N");
         await using var cmd = conn.CreateCommand();
         cmd.CommandText =
-            $"CREATE TABLE `{target}` (id BIGINT PRIMARY KEY, email VARCHAR(100), amount DECIMAL(20,4)); CREATE TABLE `{source}` (id INT AUTO_INCREMENT PRIMARY KEY, title VARCHAR(100), target_id BIGINT); INSERT INTO `{target}` VALUES (9007199254740993,'private@example.test',9007199254740993.1234),(42,'second@example.test',1.25),(9007199254740992,'neighbor-low@example.test',2),(9007199254740994,'neighbor-high@example.test',3); INSERT INTO `{source}` (title,target_id) VALUES ('Matched',9007199254740993),('Missing',999),('Empty',NULL)";
+            $"CREATE TABLE `{target}` (id BIGINT PRIMARY KEY, email VARCHAR(100), amount DECIMAL(20,4)); CREATE TABLE `{source}` (id INT AUTO_INCREMENT PRIMARY KEY, title VARCHAR(100), target_id BIGINT); INSERT INTO `{target}` VALUES (9007199254740993,'private@example.test',9007199254740993.1234),(42,'second@example.test',1.25),(1,'checked@example.test',1),(0,'unchecked@example.test',0),(9007199254740992,'neighbor-low@example.test',2),(9007199254740994,'neighbor-high@example.test',3); INSERT INTO `{source}` (title,target_id) VALUES ('Matched',9007199254740993),('Missing',999),('Empty',NULL)";
         await cmd.ExecuteNonQueryAsync();
         try
         {
@@ -105,6 +105,21 @@ public partial class ApiTests
                 JsonValueKind.Null,
                 rows[2].GetProperty("joinedValues").GetProperty("customer_email").ValueKind
             );
+            foreach (var flag in new[] { true, false })
+            {
+                var checkbox = await admin.PostAsJsonAsync(
+                    path + "/joins/resolve",
+                    new { values = new { target_id = flag } }
+                );
+                checkbox.EnsureSuccessStatusCode();
+                Assert.Equal(
+                    flag ? "checked@example.test" : "unchecked@example.test",
+                    (await checkbox.Content.ReadFromJsonAsync<JsonElement>())
+                        .GetProperty("values")
+                        .GetProperty("customer_email")
+                        .GetString()
+                );
+            }
             var resolved = await admin.PostAsJsonAsync(
                 path + "/joins/resolve",
                 new { values = new { target_id = 42 } }

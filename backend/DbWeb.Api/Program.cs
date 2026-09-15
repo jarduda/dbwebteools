@@ -679,7 +679,14 @@ api.MapPost(
         var row = new RecordRow(
             input.Values.ToDictionary(
                 v => v.Key,
-                v => v.Value.ValueKind == JsonValueKind.Null ? null : (object?)v.Value.ToString()
+                v =>
+                    v.Value.ValueKind switch
+                    {
+                        JsonValueKind.Null => null,
+                        JsonValueKind.True => (object?)1,
+                        JsonValueKind.False => 0,
+                        _ => v.Value.ToString(),
+                    }
             ),
             ""
         );
