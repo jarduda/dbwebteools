@@ -936,3 +936,11 @@ footer {
     gap: 12px;
   }
 }
+/* Keep the selection action reachable while extra lookup columns scroll. */
+.lookup-dialog th:last-child,
+.lookup-dialog td:last-child {
+  position: sticky;
+  right: 0;
+  background: #fff;
+  box-shadow: -5px 0 8px #17243b08;
+}

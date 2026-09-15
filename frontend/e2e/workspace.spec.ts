@@ -232,6 +232,13 @@ test("configure a relation and select, search, reopen and clear its key", async 
     lookup.getByRole("button", { name: "Select Bob Friendly (42)" }),
   ).toBeVisible();
   await page.setViewportSize({ width: 390, height: 844 });
+  const selectionBounds = await lookup
+    .getByRole("button", { name: "Select Bob Friendly (42)" })
+    .boundingBox();
+  const dialogBounds = await lookup.boundingBox();
+  expect(selectionBounds!.x + selectionBounds!.width).toBeLessThanOrEqual(
+    dialogBounds!.x + dialogBounds!.width,
+  );
   await page.screenshot({
     path: "../artifacts/lookup-mobile.png",
     fullPage: true,
