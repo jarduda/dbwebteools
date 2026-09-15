@@ -30,6 +30,7 @@ import {
   type Grant,
 } from "./api";
 import "./style.css";
+import { LookupConfiguration, LookupInput } from "./lookups";
 function App() {
   const [user, setUser] = useState<User | null>(null),
     [ready, setReady] = useState(false),
@@ -60,15 +61,22 @@ function App() {
     if (user) loadConnections();
   }, [user]);
   useEffect(() => {
+    let active = true;
     setTables([]);
     setTable("");
     if (connection)
       api<string[]>(`/connections/${connection}/tables`)
         .then((t) => {
+          if (!active) return;
           setTables(t);
           setTable(t[0] || "");
         })
-        .catch(fail);
+        .catch((e) => {
+          if (active) fail(e);
+        });
+    return () => {
+      active = false;
+    };
   }, [connection]);
   if (!ready) return <div className="loading">Opening your workspace…</div>;
   if (!user)
@@ -173,7 +181,13 @@ function App() {
                   Connection
                   <select
                     value={connection}
-                    onChange={(e) => setConnection(Number(e.target.value))}
+                    onChange={(e) => {
+                      if (connection !== Number(e.target.value)) {
+                        setTables([]);
+                        setTable("");
+                        setConnection(Number(e.target.value));
+                      }
+                    }}
                   >
                     {connections.map((c) => (
                       <option key={c.id} value={c.id}>
@@ -429,7 +443,7 @@ function Records({
                       {r.values[c.name] == null ? (
                         <span className="null">NULL</span>
                       ) : (
-                        String(r.values[c.name])
+                        String(r.displayValues?.[c.name] ?? r.values[c.name])
                       )}
                     </td>
                   ))}
@@ -496,6 +510,7 @@ function Records({
       </section>
       {editing !== undefined && data && (
         <RecordEditor
+          base={base}
           columns={data.columns}
           fields={settings?.fields || []}
           row={editing}
@@ -548,12 +563,14 @@ function Records({
   );
 }
 export function RecordEditor({
+  base = "",
   columns,
   fields,
   row,
   close,
   save,
 }: {
+  base?: string;
   columns: Column[];
   fields: Field[];
   row: Row | null;
@@ -577,6 +594,19 @@ export function RecordEditor({
           setBusy(true);
           setError("");
           try {
+            for (const c of writable) {
+              if (
+                layout(c)?.widget === "lookup" &&
+                !layout(c)?.hidden &&
+                !layout(c)?.readOnly &&
+                !c.nullable &&
+                c.default == null &&
+                (values[c.name] == null || values[c.name] === "")
+              )
+                throw new Error(
+                  `Select a related record for ${layout(c)?.label || c.name}.`,
+                );
+            }
             await save(
               Object.fromEntries(
                 writable
@@ -628,7 +658,20 @@ export function RecordEditor({
                       {c.primaryKey ? " · Primary key" : ""}
                     </small>
                   </span>
-                  {l?.widget === "textarea" ? (
+                  {l?.widget === "lookup" && l.lookup ? (
+                    <LookupInput
+                      base={base}
+                      name={c.name}
+                      label={l.label || c.name}
+                      lookup={l.lookup}
+                      value={values[c.name]}
+                      disabled={disabled}
+                      nullable={c.nullable}
+                      change={(key) =>
+                        setValues((v) => ({ ...v, [c.name]: key }))
+                      }
+                    />
+                  ) : l?.widget === "textarea" ? (
                     <textarea
                       disabled={disabled}
                       value={String(values[c.name] ?? "")}
@@ -681,7 +724,7 @@ export function RecordEditor({
                       }
                     />
                   )}{" "}
-                  {c.nullable && !disabled && (
+                  {c.nullable && !disabled && l?.widget !== "lookup" && (
                     <span className="null-toggle">
                       <input
                         type="checkbox"
@@ -802,6 +845,7 @@ function Admin({
       delete: false,
     }),
     [fields, setFields] = useState<Field[]>([]),
+    [layoutLoading, setLayoutLoading] = useState(false),
     [message, setMessage] = useState(""),
     [busy, setBusy] = useState(false);
   const reload = () =>
@@ -820,15 +864,22 @@ function Admin({
     setEdit(undefined);
   }, [view]);
   useEffect(() => {
+    let active = true;
     setTable("");
     setTables([]);
     if (connection)
       api<string[]>(`/connections/${connection}/tables`)
         .then((t) => {
+          if (!active) return;
           setTables(t);
           setTable(t[0] || "");
         })
-        .catch(fail);
+        .catch((e) => {
+          if (active) fail(e);
+        });
+    return () => {
+      active = false;
+    };
   }, [connection]);
   useEffect(() => {
     const g = grants.find(
@@ -836,32 +887,44 @@ function Admin({
         g.connectionId === connection && g.userId === uid && g.table === table,
     );
     setGrant(g || { read: false, create: false, update: false, delete: false });
+    let active = true;
+    setFields([]);
+    setLayoutLoading(!!table && view === "layouts");
     if (table && view === "layouts")
       Promise.all([
-        api<Page>(
-          `/connections/${connection}/tables/${encodeURIComponent(table)}/records?size=1`,
+        api<{ columns: Column[] }>(
+          `/connections/${connection}/tables/${encodeURIComponent(table)}/schema`,
         ),
         api<{ fields: Field[] }>(
           `/connections/${connection}/tables/${encodeURIComponent(table)}/settings`,
         ),
       ])
-        .then(([p, s]) =>
-          setFields(
-            p.columns.map(
-              (c, i) =>
-                s.fields.find((f) => f.name === c.name) || {
-                  name: c.name,
-                  label: c.name,
-                  section: "",
-                  order: i,
-                  hidden: false,
-                  readOnly: c.generated || c.autoIncrement,
-                  widget: "auto",
-                },
-            ),
-          ),
-        )
-        .catch(fail);
+        .then(([p, s]) => {
+          if (active)
+            setFields(
+              p.columns.map(
+                (c, i) =>
+                  s.fields.find((f) => f.name === c.name) || {
+                    name: c.name,
+                    label: c.name,
+                    section: "",
+                    order: i,
+                    hidden: false,
+                    readOnly: c.generated || c.autoIncrement,
+                    widget: "auto",
+                  },
+              ),
+            );
+        })
+        .catch((e) => {
+          if (active) fail(e);
+        })
+        .finally(() => {
+          if (active) setLayoutLoading(false);
+        });
+    return () => {
+      active = false;
+    };
   }, [connection, table, uid, grants, view]);
   const titles: Record<string, string> = {
     users: "Users & roles",
@@ -1018,7 +1081,13 @@ function Admin({
               Connection
               <select
                 value={connection}
-                onChange={(e) => setConnection(Number(e.target.value))}
+                onChange={(e) => {
+                  if (connection !== Number(e.target.value)) {
+                    setTables([]);
+                    setTable("");
+                    setConnection(Number(e.target.value));
+                  }
+                }}
               >
                 {connections.map((c) => (
                   <option key={c.id} value={c.id}>
@@ -1145,7 +1214,14 @@ function Admin({
                                   setFields(
                                     fields.map((x, j) =>
                                       j === i
-                                        ? { ...x, [k]: e.target.value }
+                                        ? {
+                                            ...x,
+                                            [k]: e.target.value,
+                                            lookup:
+                                              e.target.value === "lookup"
+                                                ? x.lookup
+                                                : undefined,
+                                          }
                                         : x,
                                     ),
                                   )
@@ -1158,6 +1234,7 @@ function Admin({
                                   "number",
                                   "date",
                                   "checkbox",
+                                  "lookup",
                                 ].map((w) => (
                                   <option key={w}>{w}</option>
                                 ))}
@@ -1208,9 +1285,29 @@ function Admin({
                   </tbody>
                 </table>
               </div>
+              {fields
+                .filter((f) => f.widget === "lookup")
+                .map((f) => (
+                  <LookupConfiguration
+                    key={`${connection}/${table}/${f.name}`}
+                    name={f.name}
+                    connection={connection}
+                    tables={tables}
+                    value={f.lookup}
+                    change={(lookup) =>
+                      setFields((old) =>
+                        old.map((x) =>
+                          x.name === f.name ? { ...x, lookup } : x,
+                        ),
+                      )
+                    }
+                  />
+                ))}
               <button
                 className="primary"
-                disabled={!table || busy}
+                disabled={
+                  !table || busy || layoutLoading || fields.length === 0
+                }
                 onClick={() =>
                   action(
                     () =>

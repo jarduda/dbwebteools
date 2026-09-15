@@ -438,7 +438,45 @@ api.MapGet(
     {
         var config = await Access(db, ctx, id, table, "read");
         await using var c = await s.Open(config);
-        return await s.List(c, table, page ?? 1, size ?? 25, sort, descending ?? false, search);
+        var result = await s.List(
+            c,
+            table,
+            page ?? 1,
+            size ?? 25,
+            sort,
+            descending ?? false,
+            search
+        );
+        var layout = await db.Layouts.SingleOrDefaultAsync(x =>
+            x.ConnectionId == id && x.Table == table
+        );
+        foreach (
+            var field in DatabaseService
+                .LayoutFields(layout?.FieldsJson)
+                .Where(f => f.Widget == "lookup" && f.Lookup != null)
+        )
+        {
+            try
+            {
+                await Access(db, ctx, id, field.Lookup!.Table, "read");
+            }
+            catch (ApiError e) when (e.Status == 403)
+            {
+                continue;
+            }
+            var labels = await s.LookupLabels(
+                c,
+                field.Lookup!,
+                result.Rows.Select(r => r.Values.GetValueOrDefault(field.Name))
+            );
+            foreach (var row in result.Rows)
+                if (
+                    row.Values.GetValueOrDefault(field.Name) is { } key
+                    && labels.TryGetValue(DatabaseService.KeyText(key), out var label)
+                )
+                    row.DisplayValues[field.Name] = label;
+        }
+        return result;
     }
 );
 api.MapGet(
@@ -480,12 +518,30 @@ admin.MapPut(
             fields.Select(x => x.Name).Distinct().Count() != fields.Count
             || fields.Any(x =>
                 !cols.Any(y => y.Name == x.Name)
-                || !new[] { "auto", "text", "textarea", "number", "date", "checkbox" }.Contains(
-                    x.Widget
-                )
+                || !new[]
+                {
+                    "auto",
+                    "text",
+                    "textarea",
+                    "number",
+                    "date",
+                    "checkbox",
+                    "lookup",
+                }.Contains(x.Widget)
             )
         )
             throw new ApiError(400, "Invalid layout fields.");
+        foreach (var field in fields)
+        {
+            if (field.Widget == "lookup")
+                await s.ValidateLookup(
+                    c,
+                    field.Lookup ?? throw new ApiError(400, "Lookup configuration required."),
+                    cols.Single(x => x.Name == field.Name)
+                );
+            else if (field.Lookup != null)
+                throw new ApiError(400, "Only lookup controls may have lookup configuration.");
+        }
         var l = await db.Layouts.SingleOrDefaultAsync(x =>
             x.ConnectionId == id && x.Table == table
         );
@@ -497,6 +553,56 @@ admin.MapPut(
         l.FieldsJson = JsonSerializer.Serialize(fields);
         await db.SaveChangesAsync();
         return Results.NoContent();
+    }
+);
+api.MapGet(
+    "/{id:int}/tables/{table}/schema",
+    async (int id, string table, AppDb db, DatabaseService s, HttpContext ctx) =>
+    {
+        var config = await Access(db, ctx, id, table, "read");
+        await using var c = await s.Open(config);
+        return new
+        {
+            columns = await s.Columns(c, table),
+            lookupKeys = await s.LookupKeys(c, table),
+        };
+    }
+);
+api.MapGet(
+    "/{id:int}/tables/{table}/lookups/{field}",
+    async (
+        int id,
+        string table,
+        string field,
+        int? page,
+        int? size,
+        string? search,
+        string? key,
+        AppDb db,
+        DatabaseService s,
+        HttpContext ctx
+    ) =>
+    {
+        var config = await Access(db, ctx, id, table, "read");
+        var layout = await db.Layouts.SingleOrDefaultAsync(x =>
+            x.ConnectionId == id && x.Table == table
+        );
+        var lookup =
+            DatabaseService
+                .LayoutFields(layout?.FieldsJson)
+                .SingleOrDefault(f => f.Name == field && f.Widget == "lookup")
+                ?.Lookup
+            ?? throw new ApiError(404, "Lookup not configured.");
+        await Access(db, ctx, id, lookup.Table, "read");
+        await using var c = await s.Open(config);
+        if (key != null)
+        {
+            var labels = await s.LookupLabels(c, lookup, new object?[] { key });
+            return Results.Ok(
+                new { found = labels.ContainsKey(key), label = labels.GetValueOrDefault(key) }
+            );
+        }
+        return Results.Ok(await s.LookupSearch(c, lookup, page ?? 1, size ?? 25, search));
     }
 );
 foreach (var operation in new[] { "create", "update", "delete" })
@@ -515,6 +621,37 @@ foreach (var operation in new[] { "create", "update", "delete" })
         {
             var config = await Access(db, ctx, id, table, op);
             await using var c = await s.Open(config);
+            if (op != "delete" && input.Values != null)
+            {
+                var layout = await db.Layouts.SingleOrDefaultAsync(x =>
+                    x.ConnectionId == id && x.Table == table
+                );
+                foreach (
+                    var field in DatabaseService
+                        .LayoutFields(layout?.FieldsJson)
+                        .Where(f => f.Widget == "lookup" && f.Lookup != null)
+                )
+                {
+                    if (
+                        !input.Values.TryGetValue(field.Name, out var key)
+                        || key.ValueKind == JsonValueKind.Null
+                    )
+                        continue;
+                    await Access(db, ctx, id, field.Lookup!.Table, "read");
+                    if (key.ValueKind is not JsonValueKind.Number and not JsonValueKind.String)
+                        throw new ApiError(400, "Lookup keys must be strings or numbers.");
+                    var labels = await s.LookupLabels(
+                        c,
+                        field.Lookup,
+                        new object?[] { key.ToString() }
+                    );
+                    if (!labels.ContainsKey(key.ToString()))
+                        throw new ApiError(
+                            400,
+                            $"Select an existing related record for {field.Name}."
+                        );
+                }
+            }
             await s.Mutate(c, table, input, op);
             db.Audit.Add(
                 new()

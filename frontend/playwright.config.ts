@@ -5,9 +5,9 @@ export default defineConfig({
   webServer: [
     {
       command:
-        "dotnet run --project ../backend/DbWeb.Api --no-launch-profile --urls http://localhost:5188",
-      url: "http://localhost:5188/health",
-      reuseExistingServer: !process.env.CI,
+        "dotnet run --project ../backend/DbWeb.Api --no-launch-profile --urls http://localhost:5190",
+      url: "http://localhost:5190/health",
+      reuseExistingServer: false,
       env: {
         ASPNETCORE_ENVIRONMENT: "Development",
         Bootstrap__Password: "browser-test-only-password",
@@ -18,8 +18,9 @@ export default defineConfig({
     },
     {
       command: "npm run dev",
+      env: { API_PROXY_TARGET: "http://localhost:5190" },
       url: "http://localhost:5173",
-      reuseExistingServer: !process.env.CI,
+      reuseExistingServer: false,
     },
   ],
 });

@@ -18,7 +18,7 @@ public record ColumnInfo(
     string? Default
 );
 
-public class DatabaseService(IDataProtectionProvider protection)
+public partial class DatabaseService(IDataProtectionProvider protection)
 {
     public static string Quote(string name) => "`" + name.Replace("`", "``") + "`";
 
@@ -118,7 +118,7 @@ public class DatabaseService(IDataProtectionProvider protection)
         return rows;
     }
 
-    public async Task<object> List(
+    public async Task<RecordPage> List(
         MySqlConnection db,
         string table,
         int page,
@@ -154,14 +154,13 @@ public class DatabaseService(IDataProtectionProvider protection)
         cmd.Parameters.AddWithValue("@size", size);
         cmd.Parameters.AddWithValue("@offset", checked((long)(page - 1) * size));
         var rows = await Read(cmd);
-        return new
-        {
+        return new(
             total,
             page,
             size,
-            columns = cols,
-            rows = rows.Select(x => new { values = x, version = Version(x) }),
-        };
+            cols,
+            rows.Select(x => new RecordRow(x, Version(x))).ToList()
+        );
     }
 
     static object Value(JsonElement e, ColumnInfo col)

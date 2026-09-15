@@ -51,7 +51,11 @@ export type Column = {
   autoIncrement: boolean;
   default: string | null;
 };
-export type Row = { values: Record<string, unknown>; version: string };
+export type Row = {
+  values: Record<string, unknown>;
+  version: string;
+  displayValues?: Record<string, string | null>;
+};
 export type Page = {
   total: number;
   page: number;
@@ -67,6 +71,7 @@ export type Field = {
   hidden: boolean;
   readOnly: boolean;
   widget: string;
+  lookup?: Lookup | null;
 };
 export type Grant = {
   userId: number;
@@ -76,4 +81,11 @@ export type Grant = {
   create: boolean;
   update: boolean;
   delete: boolean;
+};
+
+export type Lookup = {
+  table: string;
+  keyColumn: string;
+  displayColumn: string;
+  searchColumns: string[];
 };

@@ -69,3 +69,73 @@ describe("Record editor", () => {
     );
   });
 });
+
+describe("Lookup editor validation", () => {
+  it("requires selection for a required relation instead of submitting a blank key", async () => {
+    const save = vi.fn().mockResolvedValue(undefined);
+    render(
+      <RecordEditor
+        columns={[{ ...columns[1], name: "person_id", type: "bigint" }]}
+        fields={[
+          {
+            name: "person_id",
+            label: "Customer",
+            section: "",
+            order: 0,
+            hidden: false,
+            readOnly: false,
+            widget: "lookup",
+            lookup: {
+              table: "people",
+              keyColumn: "id",
+              displayColumn: "name",
+              searchColumns: [],
+            },
+          },
+        ]}
+        row={null}
+        close={() => {}}
+        save={save}
+      />,
+    );
+    fireEvent.click(screen.getByText("Save record"));
+    await waitFor(() =>
+      expect(screen.getByRole("alert").textContent).toBe(
+        "Select a related record for Customer.",
+      ),
+    );
+    expect(save).not.toHaveBeenCalled();
+  });
+  it("leaves an optional relation omitted so a database default can apply", async () => {
+    const save = vi.fn().mockResolvedValue(undefined);
+    render(
+      <RecordEditor
+        columns={[
+          { ...columns[1], name: "person_id", type: "bigint", nullable: true },
+        ]}
+        fields={[
+          {
+            name: "person_id",
+            label: "Customer",
+            section: "",
+            order: 0,
+            hidden: false,
+            readOnly: false,
+            widget: "lookup",
+            lookup: {
+              table: "people",
+              keyColumn: "id",
+              displayColumn: "name",
+              searchColumns: [],
+            },
+          },
+        ]}
+        row={null}
+        close={() => {}}
+        save={save}
+      />,
+    );
+    fireEvent.click(screen.getByText("Save record"));
+    await waitFor(() => expect(save).toHaveBeenCalledWith({}));
+  });
+});

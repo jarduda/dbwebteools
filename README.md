@@ -10,6 +10,7 @@ A responsive MariaDB record-management workspace with a separate **ASP.NET Core 
 - Multiple database connections with encrypted passwords, connection testing, verified TLS by default.
 - Deny-by-default per-user, per-table read/create/update/delete permissions enforced by the API.
 - Visual editing layouts: field labels, sections, order, control types, hidden/read-only fields.
+- Configurable related-table lookups: searchable selection dialogs, friendly labels, and key-only storage.
 - Recent record-change activity without recording sensitive field values.
 - Responsive interface, keyboard-accessible dialogs, loading states, inline errors, and deletion confirmation.
 
@@ -43,6 +44,18 @@ npm run dev
 
 Open the Vite URL. Vite proxies `/api` to port 5188, so browser API access stays same-origin. There is intentionally no permissive CORS policy.
 
+## Related-table lookups
+
+1. Open **Administration → Editor layouts**, select the connection and source table, and change the relation column's control to **lookup**.
+2. In its relation configuration, select the **Related table**, **Stored key**, **Display value**, and optional **Additional search columns**. Save the layout.
+3. In the record editor, click **Choose…** to open the record-selection window. Search matches the key, display column, and selected extra columns. Select a row to populate the relation; only its key is saved to MariaDB.
+
+For example, configure `orders.customer_id` to look up `customers.id`, display `customers.name`, and search `customers.email`. The grid and editor show the customer's name; the editor also shows the stored key for disambiguation. Existing relations resolve automatically. Cancel leaves the original selection intact; **Clear** stores NULL for nullable columns. Results are paginated and searchable, and large integer keys retain their exact precision.
+
+Lookups target tables in the **same configured database connection** and require a non-null **single-column primary or unique key** with a compatible source type. Composite-key lookups and multi-column relation mappings are not supported. Existing composite-key CRUD is unchanged. Configuration is stored in existing layout JSON; no application-data migration is required.
+
+Users need **read permission on both source and related tables** to search or resolve related values, plus the usual source create/update permission to save. Without target read access, the grid retains the source key but never exposes related values. Invalid or missing selections are rejected by the API. Layouts do not create or alter database foreign-key constraints: keep actual foreign keys for transactional referential integrity, including changes made outside this application. Search treats `%` and `_` literally; it never executes user SQL.
+
 ## Build and test
 
 ```bash
@@ -53,7 +66,7 @@ Open the Vite URL. Vite proxies `/api` to port 5188, so browser API access stays
 
 The scripts restore locked dependencies, build with warnings as errors, run backend and frontend tests, and publish independent artifacts into `artifacts/api` and `artifacts/web`.
 
-To exercise real MariaDB CRUD locally, set `MARIADB_TEST_CONNECTION` to a connection string for a **disposable test database**, then run the script. The integration test creates and drops only a randomly named test table. CI always requires and runs this test against a MariaDB service. Without this environment variable, local runs do not exercise the database integration scenario.
+To exercise real MariaDB CRUD locally, set `MARIADB_TEST_CONNECTION` to a connection string for a **disposable test database**, then run the script. The integration tests create and drop only randomly named test tables. CI always requires and runs this test against a MariaDB service. Without this environment variable, local runs do not exercise the database integration scenario.
 
 ## Architecture
 
@@ -72,7 +85,7 @@ Authentication uses PBKDF2 password hashing through ASP.NET Core PasswordHasher,
 
 Table names and column identifiers are validated against `information_schema` and safely quoted. Values are parameters. Updates/deletes require the full primary key and a record version checked inside a transaction with `SELECT ... FOR UPDATE`. Tables without primary keys are read-only; views are not exposed. Large integer and decimal values are transported as strings to preserve precision; binary values use base64. Defaulted fields omitted from create requests retain their database default.
 
-Layouts are presentation settings, **not column-level security**. Table grants protect all columns in a table. MariaDB transactional tables (InnoDB) are required for reliable concurrency guarantees. Foreign keys and database constraints are enforced by MariaDB; foreign-key dropdowns, schema editing, and file attachments are outside this release. Application metadata currently uses a single SQLite instance; scale the application as a single replica and use migrations before evolving its schema. The activity log and target database are separate stores, not a distributed atomic audit ledger.
+Layouts are presentation settings, **not column-level security**. Table grants protect all columns in a table. MariaDB transactional tables (InnoDB) are required for reliable concurrency guarantees. Foreign keys and database constraints are enforced by MariaDB; schema editing and file attachments are outside this release. Application metadata currently uses a single SQLite instance; scale the application as a single replica and use migrations before evolving its schema. The activity log and target database are separate stores, not a distributed atomic audit ledger.
 
 ## CI/CD and contributing
 
