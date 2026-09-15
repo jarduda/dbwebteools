@@ -373,6 +373,14 @@ test("date/time and keyed dropdown layouts preserve values and enforce unique op
     .selectOption("z_editor_records");
   const row = page.getByRole("row").filter({ hasText: "Precision fixture" });
   await expect(row).toContainText("Draft document");
+  const search = page.getByLabel("Search records", { exact: true });
+  await search.fill("DOCUMENT");
+  await expect(row).toBeVisible();
+  await search.fill("publish");
+  await expect(row).toHaveCount(0);
+  await search.fill("document");
+  await expect(row).toBeVisible();
+  await search.fill("");
   await row.getByRole("button", { name: /Edit record/ }).click();
   const edit = page.getByRole("dialog", { name: "Edit record", exact: true });
   await expect(edit.getByLabel("stamped", { exact: true })).toHaveAttribute(

@@ -130,7 +130,8 @@ public partial class DatabaseService(IDataProtectionProvider protection)
         string? sort,
         bool descending,
         string? search,
-        ListView? view = null
+        ListView? view = null,
+        List<LayoutField>? fields = null
     )
     {
         var cols = await Columns(db, table);
@@ -146,7 +147,9 @@ public partial class DatabaseService(IDataProtectionProvider protection)
             throw new ApiError(400, "Unknown sort column.");
         await using var cmd = db.CreateCommand();
         var searchable = cols.Where(x =>
-                new[] { "varchar", "char", "text", "mediumtext", "longtext" }.Contains(x.Type)
+                new[] { "varchar", "char", "tinytext", "text", "mediumtext", "longtext" }.Contains(
+                    x.Type
+                )
             )
             .ToList();
         var predicates = new List<string>();
@@ -155,11 +158,32 @@ public partial class DatabaseService(IDataProtectionProvider protection)
             predicates.Add(viewPredicate);
         if (!string.IsNullOrEmpty(search) && searchable.Count > 0)
         {
-            predicates.Add(
-                "("
-                    + string.Join(" OR ", searchable.Select(x => $"{Quote(x.Name)} LIKE @search"))
-                    + ")"
-            );
+            var matches = searchable.Select(x => $"{Quote(x.Name)} LIKE @search").ToList();
+            // Translate friendly labels to exact stored keys before counting/paging.
+            // Labels are literal, case-insensitive substrings; SQL only receives key parameters.
+            foreach (var field in fields ?? [])
+            {
+                if (
+                    field.Widget != "dropdown"
+                    || field.Options == null
+                    || !searchable.Any(c => c.Name == field.Name)
+                )
+                    continue;
+                var keys = new List<string>();
+                foreach (
+                    var option in field.Options.Where(o =>
+                        o.Display.Contains(search, StringComparison.OrdinalIgnoreCase)
+                    )
+                )
+                {
+                    var parameter = "@dropdownSearch" + cmd.Parameters.Count;
+                    cmd.Parameters.AddWithValue(parameter, option.Key);
+                    keys.Add(parameter);
+                }
+                if (keys.Count > 0)
+                    matches.Add($"BINARY {Quote(field.Name)} IN ({string.Join(", ", keys)})");
+            }
+            predicates.Add("(" + string.Join(" OR ", matches) + ")");
             cmd.Parameters.AddWithValue("@search", "%" + search + "%");
         }
         var where = predicates.Count == 0 ? "" : " WHERE " + string.Join(" AND ", predicates);
