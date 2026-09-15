@@ -5,6 +5,7 @@ using DbWeb.Api;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
+using MySqlConnector;
 using Xunit;
 
 namespace DbWeb.Tests;
@@ -168,6 +169,213 @@ public class ApiTests
         var json = await c.GetStringAsync("/api/admin/connections");
         Assert.DoesNotContain("password", json, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("must-not-appear", json);
+    }
+
+    [Fact]
+    public async Task LookupsValidateSearchResolveAndEnforceTargetPermissions()
+    {
+        var cs = Environment.GetEnvironmentVariable("MARIADB_TEST_CONNECTION");
+        if (string.IsNullOrEmpty(cs))
+        {
+            Assert.False(Environment.GetEnvironmentVariable("CI") == "true");
+            return;
+        }
+        await using var conn = new MySqlConnection(cs);
+        await conn.OpenAsync();
+        var target = "lookup_" + Guid.NewGuid().ToString("N");
+        var source = "source_" + Guid.NewGuid().ToString("N");
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText =
+            $"CREATE TABLE `{target}` (id BIGINT PRIMARY KEY, name VARCHAR(100), email VARCHAR(100)); CREATE TABLE `{source}` (id INT AUTO_INCREMENT PRIMARY KEY, target_id BIGINT NULL); INSERT INTO `{target}` VALUES (9007199254740993,'Alice 100%','special@example.test'),(42,'Bob','other@example.test'); INSERT INTO `{source}` (target_id) VALUES (9007199254740993)";
+        await cmd.ExecuteNonQueryAsync();
+        try
+        {
+            using var f = new Factory();
+            using var admin = f.CreateClient();
+            await Login(admin);
+            var builder = new MySqlConnectionStringBuilder(cs);
+            var created = await admin.PostAsJsonAsync(
+                "/api/admin/connections",
+                new ConnectionInput(
+                    "Lookup test",
+                    builder.Server,
+                    builder.Port,
+                    builder.Database,
+                    builder.UserID,
+                    builder.Password,
+                    false
+                )
+            );
+            created.EnsureSuccessStatusCode();
+            var id = (await created.Content.ReadFromJsonAsync<JsonElement>())
+                .GetProperty("id")
+                .GetInt32();
+            var path = $"/api/connections/{id}/tables/{source}";
+            var layoutPath = $"/api/admin/connections/{id}/tables/{source}/layout";
+            var lookup = new LookupConfig(target, "id", "name", ["email"]);
+            var field = new LayoutField(
+                "target_id",
+                "Person",
+                "",
+                1,
+                false,
+                false,
+                "lookup",
+                lookup
+            );
+            (await admin.PutAsJsonAsync(layoutPath, new[] { field })).EnsureSuccessStatusCode();
+            foreach (var search in new[] { "9007199254740993", "Alice", "special@", "%" })
+            {
+                var page = await admin.GetFromJsonAsync<JsonElement>(
+                    $"{path}/lookups/target_id?search={Uri.EscapeDataString(search)}"
+                );
+                Assert.Equal(1, page.GetProperty("total").GetInt32());
+                Assert.Equal(
+                    "9007199254740993",
+                    page.GetProperty("rows")[0].GetProperty("id").GetString()
+                );
+            }
+            var noMatch = await admin.GetFromJsonAsync<JsonElement>(
+                $"{path}/lookups/target_id?search=%27%20OR%201=1--"
+            );
+            Assert.Equal(0, noMatch.GetProperty("total").GetInt32());
+            var second = await admin.GetFromJsonAsync<JsonElement>(
+                $"{path}/lookups/target_id?page=2&size=1"
+            );
+            Assert.Equal(2, second.GetProperty("total").GetInt32());
+            Assert.Single(second.GetProperty("rows").EnumerateArray());
+            var resolved = await admin.GetFromJsonAsync<JsonElement>(
+                $"{path}/lookups/target_id?key=9007199254740993"
+            );
+            Assert.Equal("Alice 100%", resolved.GetProperty("label").GetString());
+            var missing = await admin.GetFromJsonAsync<JsonElement>(
+                $"{path}/lookups/target_id?key=123"
+            );
+            Assert.False(missing.GetProperty("found").GetBoolean());
+            var records = await admin.GetFromJsonAsync<JsonElement>($"{path}/records");
+            Assert.Equal(
+                "Alice 100%",
+                records
+                    .GetProperty("rows")[0]
+                    .GetProperty("displayValues")
+                    .GetProperty("target_id")
+                    .GetString()
+            );
+            Assert.Equal(
+                "9007199254740993",
+                records
+                    .GetProperty("rows")[0]
+                    .GetProperty("values")
+                    .GetProperty("target_id")
+                    .GetString()
+            );
+            Assert.Equal(
+                HttpStatusCode.BadRequest,
+                (
+                    await admin.PostAsJsonAsync(
+                        $"{path}/create",
+                        new { values = new { target_id = "999" } }
+                    )
+                ).StatusCode
+            );
+            (
+                await admin.PostAsJsonAsync(
+                    $"{path}/create",
+                    new { values = new { target_id = "42" } }
+                )
+            ).EnsureSuccessStatusCode();
+            (
+                await admin.PostAsJsonAsync(
+                    $"{path}/create",
+                    new { values = new { target_id = (string?)null } }
+                )
+            ).EnsureSuccessStatusCode();
+            foreach (
+                var invalid in new[]
+                {
+                    lookup with
+                    {
+                        KeyColumn = "name",
+                    },
+                    lookup with
+                    {
+                        DisplayColumn = "missing",
+                    },
+                    lookup with
+                    {
+                        SearchColumns = ["id`; DROP TABLE x;--"],
+                    },
+                }
+            )
+                Assert.Equal(
+                    HttpStatusCode.BadRequest,
+                    (
+                        await admin.PutAsJsonAsync(
+                            layoutPath,
+                            new[] { field with { Lookup = invalid } }
+                        )
+                    ).StatusCode
+                );
+            var memberResult = await admin.PostAsJsonAsync(
+                "/api/admin/users",
+                new UserInput("lookupmember", "member-password-12345", false, true)
+            );
+            var uid = (await memberResult.Content.ReadFromJsonAsync<JsonElement>())
+                .GetProperty("id")
+                .GetInt32();
+            (
+                await admin.PutAsJsonAsync(
+                    "/api/admin/grants",
+                    new TableGrant
+                    {
+                        UserId = uid,
+                        ConnectionId = id,
+                        Table = source,
+                        Read = true,
+                        Create = true,
+                    }
+                )
+            ).EnsureSuccessStatusCode();
+            using var member = f.CreateClient();
+            await Login(member, "lookupmember", "member-password-12345");
+            Assert.Equal(
+                HttpStatusCode.Forbidden,
+                (await member.GetAsync($"{path}/lookups/target_id")).StatusCode
+            );
+            Assert.Equal(
+                HttpStatusCode.Forbidden,
+                (await member.GetAsync($"{path}/lookups/target_id?key=42")).StatusCode
+            );
+            Assert.Equal(
+                HttpStatusCode.Forbidden,
+                (
+                    await member.PostAsJsonAsync(
+                        $"{path}/create",
+                        new { values = new { target_id = 42 } }
+                    )
+                ).StatusCode
+            );
+            var restricted = await member.GetStringAsync($"{path}/records");
+            Assert.DoesNotContain("Alice", restricted);
+            (
+                await admin.PutAsJsonAsync(
+                    "/api/admin/grants",
+                    new TableGrant
+                    {
+                        UserId = uid,
+                        ConnectionId = id,
+                        Table = target,
+                        Read = true,
+                    }
+                )
+            ).EnsureSuccessStatusCode();
+            (await member.GetAsync($"{path}/lookups/target_id")).EnsureSuccessStatusCode();
+        }
+        finally
+        {
+            cmd.CommandText = $"DROP TABLE `{source}`; DROP TABLE `{target}`";
+            await cmd.ExecuteNonQueryAsync();
+        }
     }
 
     [Fact]

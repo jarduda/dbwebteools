@@ -51,7 +51,8 @@ public record LayoutField(
     int Order,
     bool Hidden,
     bool ReadOnly,
-    string Widget
+    string Widget,
+    LookupConfig? Lookup = null
 );
 
 public class AuditEntry
@@ -110,3 +111,23 @@ public class ApiError(int status, string message) : Exception(message)
 {
     public int Status { get; } = status;
 }
+
+public record LookupConfig(
+    string Table,
+    string KeyColumn,
+    string DisplayColumn,
+    List<string> SearchColumns
+);
+
+public record RecordRow(Dictionary<string, object?> Values, string Version)
+{
+    public Dictionary<string, string?> DisplayValues { get; } = new();
+}
+
+public record RecordPage(
+    long Total,
+    int Page,
+    int Size,
+    List<ColumnInfo> Columns,
+    List<RecordRow> Rows
+);

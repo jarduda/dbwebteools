@@ -45,7 +45,8 @@ public class MariaDbTests
                 "create"
             );
             var page = JsonSerializer.SerializeToElement(
-                await service.List(conn, table, 1, 25, null, false, "O'Reilly")
+                await service.List(conn, table, 1, 25, null, false, "O'Reilly"),
+                new JsonSerializerOptions(JsonSerializerDefaults.Web)
             );
             Assert.Equal(1, page.GetProperty("total").GetInt32());
             var row = page.GetProperty("rows")[0];
@@ -66,7 +67,8 @@ public class MariaDbTests
             );
             Assert.Equal(409, stale.Status);
             page = JsonSerializer.SerializeToElement(
-                await service.List(conn, table, 1, 25, null, false, null)
+                await service.List(conn, table, 1, 25, null, false, null),
+                new JsonSerializerOptions(JsonSerializerDefaults.Web)
             );
             await service.Mutate(
                 conn,
@@ -75,12 +77,14 @@ public class MariaDbTests
                 "delete"
             );
             page = JsonSerializer.SerializeToElement(
-                await service.List(conn, table, 1, 25, null, false, null)
+                await service.List(conn, table, 1, 25, null, false, null),
+                new JsonSerializerOptions(JsonSerializerDefaults.Web)
             );
             Assert.Equal(0, page.GetProperty("total").GetInt32());
             await service.Mutate(conn, table, new(D("{}"), null, null), "create");
             page = JsonSerializer.SerializeToElement(
-                await service.List(conn, table, 1, 25, null, false, null)
+                await service.List(conn, table, 1, 25, null, false, null),
+                new JsonSerializerOptions(JsonSerializerDefaults.Web)
             );
             Assert.Equal(
                 "Default",
