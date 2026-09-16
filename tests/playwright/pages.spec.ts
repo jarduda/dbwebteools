@@ -363,6 +363,24 @@ test("define pages and drill through related tabs with record keys and browser h
     /\/tabs\/[^/]+\/records$/,
     "Alice",
   );
+  // Search the configured lookup's friendly value, not the stored numeric parent key.
+  await panel.getByLabel("Search Orders", { exact: true }).fill("Page Alice");
+  await expect(
+    panel.getByRole("link", { name: "Alice order", exact: true }),
+  ).toBeVisible();
+  await expect(panel.locator(".table-scroll")).toHaveAttribute(
+    "aria-busy",
+    "false",
+  );
+  await expect(panel.locator(".pagination")).toContainText("1 records");
+  await panel.getByLabel("Search Orders", { exact: true }).fill("Page Bob");
+  await expect(
+    panel.getByText("No related records found.", { exact: true }),
+  ).toBeVisible();
+  await panel.getByLabel("Search Orders", { exact: true }).fill("");
+  await expect(
+    panel.getByRole("link", { name: "Alice order", exact: true }),
+  ).toBeVisible();
   // Preserve the list, search focus and scroll position during delayed/in-flight searches.
   await page.setViewportSize({ width: 390, height: 844 });
   const search = panel.getByLabel("Search Orders", { exact: true });

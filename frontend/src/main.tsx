@@ -22,6 +22,7 @@ import {
 import {
   api,
   csrf,
+  SESSION_EXPIRED,
   type User,
   type Connection,
   type Column,
@@ -62,6 +63,53 @@ function App() {
     [tables, setTables] = useState<string[]>([]),
     [table, setTable] = useState(""),
     [error, setError] = useState("");
+  const [sessionNotice, setSessionNotice] = useState("");
+  useEffect(() => {
+    const expired = () => {
+      setUser(null);
+      setConnections([]);
+      setConnection(0);
+      setTables([]);
+      setTable("");
+      setError("");
+      setView("records");
+      setReady(true);
+      setSessionNotice(
+        user ? "Your session has expired. Please sign in again." : "",
+      );
+    };
+    window.addEventListener(SESSION_EXPIRED, expired);
+    return () => window.removeEventListener(SESSION_EXPIRED, expired);
+  }, [user]);
+  useEffect(() => {
+    if (!user) return;
+    let checking = false;
+    let lastCheck = 0;
+    const check = () => {
+      if (
+        document.visibilityState === "hidden" ||
+        checking ||
+        Date.now() - lastCheck < 1000
+      )
+        return;
+      checking = true;
+      lastCheck = Date.now();
+      // No polling: avoid keeping an idle cookie alive. Check on browser/tab return.
+      api("/auth/me")
+        .catch(() => {})
+        .finally(() => {
+          checking = false;
+        });
+    };
+    window.addEventListener("focus", check);
+    window.addEventListener("pageshow", check);
+    document.addEventListener("visibilitychange", check);
+    return () => {
+      window.removeEventListener("focus", check);
+      window.removeEventListener("pageshow", check);
+      document.removeEventListener("visibilitychange", check);
+    };
+  }, [user]);
   const [hash, setHash] = useState(window.location.hash);
   const pageRoute = parsePageRoute(hash);
   useEffect(() => {
@@ -123,9 +171,12 @@ function App() {
   if (!user)
     return (
       <Login
+        notice={sessionNotice}
         onLogin={(u) => {
+          setSessionNotice("");
+          setError("");
           setUser(u);
-          csrf();
+          csrf().catch(fail);
         }}
       />
     );
@@ -292,7 +343,13 @@ function App() {
     </div>
   );
 }
-function Login({ onLogin }: { onLogin: (u: User) => void }) {
+function Login({
+  onLogin,
+  notice = "",
+}: {
+  onLogin: (u: User) => void;
+  notice?: string;
+}) {
   const [error, setError] = useState(""),
     [busy, setBusy] = useState(false);
   return (
@@ -339,6 +396,11 @@ function Login({ onLogin }: { onLogin: (u: User) => void }) {
         <span className="eyebrow">WELCOME BACK</span>
         <h2>Sign in to your workspace</h2>
         <p>Use the account provided by your administrator.</p>
+        {notice && (
+          <p className="notice" role="status">
+            {notice}
+          </p>
+        )}
         {error && (
           <div role="alert" className="alert">
             {error}

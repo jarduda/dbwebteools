@@ -1,13 +1,21 @@
+export const SESSION_EXPIRED = "tablespace:session-expired";
 let token = "";
+let sessionGeneration = 0;
 export async function csrf() {
+  const generation = sessionGeneration;
   const r = await fetch("/api/auth/csrf", { credentials: "same-origin" });
-  token = (await r.json()).token;
+  if (!r.ok) throw new Error("Unable to refresh the security token.");
+  const result = await r.json();
+  if (generation !== sessionGeneration)
+    throw new Error("Session changed. Please try again.");
+  token = result.token;
 }
 export async function api<T = unknown>(
   url: string,
   method = "GET",
   body?: unknown,
 ): Promise<T> {
+  const generation = sessionGeneration;
   if (method !== "GET" && !token) await csrf();
   const r = await fetch("/api" + url, {
     method,
@@ -15,7 +23,14 @@ export async function api<T = unknown>(
     headers: { "Content-Type": "application/json", "X-CSRF-TOKEN": token },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
+  if (generation !== sessionGeneration)
+    throw new Error("Session changed. Please try again.");
   if (!r.ok) {
+    if (r.status === 401 && url !== "/auth/login") {
+      token = "";
+      sessionGeneration++;
+      window.dispatchEvent(new Event(SESSION_EXPIRED));
+    }
     let title =
       r.status === 401 ? "Please sign in." : `Request failed (${r.status})`;
     try {
@@ -24,6 +39,10 @@ export async function api<T = unknown>(
       /* empty response */
     }
     throw new Error(title);
+  }
+  if (url === "/auth/login" || url === "/auth/logout") {
+    sessionGeneration++;
+    token = "";
   }
   return r.status === 204 ? (undefined as T) : r.json();
 }

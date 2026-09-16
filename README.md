@@ -103,9 +103,11 @@ List settings and joins are stored in existing layout JSON. No schema migration 
 
 ## Dates, timestamps, and dropdowns
 
+Expired or revoked sessions return to the sign-in screen on any protected API response, and are rechecked when the browser/tab is restored or focused. The exact record URL is kept so signing in resumes that page. Permission-denied and network errors do not sign the user out; idle sessions are not kept alive by background polling.
+
 All record searches (data browser, related lists, and lookup windows) wait **500 ms after the last keystroke** before querying. Each input change resets the timer; clearing the input follows the same delay.
 
-Record search matches configured dropdown display labels using case-insensitive partial text, as well as stored keys and other text columns. Label matches respect layout filters, sorting, and pagination; stored values are unchanged.
+Record search matches configured dropdown display labels using case-insensitive partial text, as well as stored keys and other text columns. It also matches configured lookup key/display values and extra lookup search columns in both the data browser and related lists. Lookup matches are case-insensitive, treat `%`/`_` literally, and are computed on the backend before counts and pagination. Related table and field read access is required; inaccessible extra fields cannot influence results. Existing referenced records remain searchable even when they no longer satisfy lookup selection criteria. Parent constraints and saved list filters still apply. Label matches respect layout filters, sorting, and pagination; stored values are unchanged.
 
 In **Administration → Editor layouts**, use these controls:
 

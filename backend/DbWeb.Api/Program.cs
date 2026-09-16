@@ -532,7 +532,10 @@ api.MapGet(
             search,
             definition.View,
             definition.Fields,
-            readable: readable
+            readable: readable,
+            lookupSearchFields: string.IsNullOrEmpty(search)
+                ? []
+                : await FieldAccess.SearchLookups(db, ctx, id, safeFields)
         );
         await Decorate(db, ctx, id, table, c, s, definition.Fields, result);
         return result;

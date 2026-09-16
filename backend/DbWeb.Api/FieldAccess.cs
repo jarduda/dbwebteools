@@ -94,6 +94,41 @@ public sealed class FieldAccess(Dictionary<string, string>? levels)
         return access;
     }
 
+    public static async Task<List<LayoutField>> SearchLookups(
+        AppDb db,
+        HttpContext ctx,
+        int connection,
+        List<LayoutField> fields
+    )
+    {
+        var result = new List<LayoutField>();
+        foreach (var field in fields.Where(f => f.Widget == "lookup" && f.Lookup != null))
+        {
+            var lookup = field.Lookup!;
+            try
+            {
+                var access = await Related(
+                    db,
+                    ctx,
+                    connection,
+                    lookup.Table,
+                    [lookup.KeyColumn, lookup.DisplayColumn]
+                );
+                result.Add(
+                    field with
+                    {
+                        Lookup = lookup with
+                        {
+                            SearchColumns = lookup.SearchColumns.Where(access.Read).ToList(),
+                        },
+                    }
+                );
+            }
+            catch (ApiError e) when (e.Status == 403) { }
+        }
+        return result;
+    }
+
     public static async Task<LookupConfig> Lookup(
         AppDb db,
         HttpContext ctx,
