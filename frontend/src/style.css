@@ -1037,3 +1037,18 @@ input[aria-readonly="true"] {
     padding-bottom: 14px;
   }
 }
+
+.formula-config {
+  grid-template-columns: minmax(0, 1fr);
+}
+.formula-config p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.formula-config textarea {
+  min-height: 80px;
+  font-family: monospace;
+}
+.formula-config button {
+  justify-self: start;
+}

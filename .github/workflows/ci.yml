@@ -31,14 +31,16 @@ jobs:
         with:
           node-version: '22'
           cache: npm
-          cache-dependency-path: frontend/package-lock.json
+          cache-dependency-path: |
+            frontend/package-lock.json
+            tests/playwright/package-lock.json
       - run: ./scripts/build.sh
       - run: npx playwright install --with-deps chromium
-        working-directory: frontend
+        working-directory: tests/playwright
       - name: Seed browser test fixture
         run: docker exec -i ${{ job.services.mariadb.id }} mariadb -uroot -pci-disposable-root dbweb_tests < tests/fixtures/browser.sql
       - run: npx playwright test
-        working-directory: frontend
+        working-directory: tests/playwright
       - run: npm audit --prefix frontend --omit=dev --audit-level=high
       - uses: actions/upload-artifact@v4
         with:

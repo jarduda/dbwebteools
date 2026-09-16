@@ -23,7 +23,10 @@ test("desktop and mobile workspace with administration", async ({ page }) => {
   await expect(
     page.getByRole("button", { name: "Add connection" }),
   ).toBeVisible();
-  await page.screenshot({ path: "../artifacts/desktop.png", fullPage: true });
+  await page.screenshot({
+    path: "../../artifacts/desktop.png",
+    fullPage: true,
+  });
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(page.getByRole("button", { name: "Sign out" })).toBeVisible();
   await page.getByRole("button", { name: "Data browser" }).click();
@@ -35,7 +38,7 @@ test("desktop and mobile workspace with administration", async ({ page }) => {
       () => document.documentElement.scrollWidth <= window.innerWidth,
     ),
   ).toBe(true);
-  await page.screenshot({ path: "../artifacts/mobile.png", fullPage: true });
+  await page.screenshot({ path: "../../artifacts/mobile.png", fullPage: true });
   expect(errors).toEqual([]);
 });
 
@@ -97,7 +100,7 @@ test("browse, create, edit and delete MariaDB records", async ({ page }) => {
     .filter({ hasText: "Browser CRUD updated" });
   await expect(updated).toBeVisible();
   await page.screenshot({
-    path: "../artifacts/records-desktop.png",
+    path: "../../artifacts/records-desktop.png",
     fullPage: true,
   });
   await updated.getByRole("button", { name: /Delete record/ }).click();
@@ -240,7 +243,7 @@ test("configure a relation and select, search, reopen and clear its key", async 
     dialogBounds!.x + dialogBounds!.width,
   );
   await page.screenshot({
-    path: "../artifacts/lookup-mobile.png",
+    path: "../../artifacts/lookup-mobile.png",
     fullPage: true,
   });
   expect(
@@ -432,7 +435,7 @@ test("date/time and keyed dropdown layouts preserve values and enforce unique op
   await edit.getByLabel("status", { exact: true }).selectOption("ready");
   await page.setViewportSize({ width: 390, height: 844 });
   await page.screenshot({
-    path: "../artifacts/date-dropdown-mobile.png",
+    path: "../../artifacts/date-dropdown-mobile.png",
     fullPage: true,
   });
   await edit.getByRole("button", { name: "Save record" }).click();
@@ -608,7 +611,7 @@ test("list columns and read-only joins refresh when a lookup changes", async ({
   );
   await page.setViewportSize({ width: 390, height: 844 });
   await page.screenshot({
-    path: "../artifacts/joined-fields-mobile.png",
+    path: "../../artifacts/joined-fields-mobile.png",
     fullPage: true,
   });
   await edit.getByRole("button", { name: "Save record", exact: true }).click();
@@ -843,7 +846,7 @@ test("layout labels, default sorting and filters persist and constrain search", 
     ),
   ).toBe(true);
   await page.screenshot({
-    path: "../artifacts/layout-filters-mobile.png",
+    path: "../../artifacts/layout-filters-mobile.png",
     fullPage: true,
   });
   await page.setViewportSize({ width: 1280, height: 900 });

@@ -543,9 +543,9 @@ admin.MapPut(
         if (
             fields.Select(x => x.Name).Distinct(StringComparer.OrdinalIgnoreCase).Count()
                 != fields.Count
-            || fields.Count(x => x.Widget == "join") > 20
+            || fields.Count(x => x.Widget is "join" or "formula") > 20
             || fields.Any(x =>
-                (x.Widget != "join" && !cols.Any(y => y.Name == x.Name))
+                (x.Widget is not "join" and not "formula" && !cols.Any(y => y.Name == x.Name))
                 || !new[]
                 {
                     "auto",
@@ -558,13 +558,14 @@ admin.MapPut(
                     "checkbox",
                     "lookup",
                     "join",
+                    "formula",
                 }.Contains(x.Widget)
             )
         )
             throw new ApiError(400, "Invalid layout fields.");
         foreach (var field in fields)
         {
-            if (field.Widget == "join")
+            if (field.Widget is "join" or "formula")
             {
                 if (
                     string.IsNullOrWhiteSpace(field.Name)
@@ -580,15 +581,28 @@ admin.MapPut(
                 )
                     throw new ApiError(
                         400,
-                        "Joined fields must have a unique virtual name, be read-only, and have no editable control configuration."
+                        "Computed fields must have a unique virtual name, be read-only, and have no editable control configuration."
                     );
-                await s.ValidateJoin(
-                    c,
-                    field.Join ?? throw new ApiError(400, "Join configuration required."),
-                    cols
-                );
+                if (field.Widget == "formula")
+                {
+                    if (field.Join != null)
+                        throw new ApiError(400, "Formula fields cannot define a join.");
+                    Formulas.Compile(field.Formula, cols);
+                }
+                else
+                {
+                    if (field.Formula != null)
+                        throw new ApiError(400, "Only formula fields may define a formula.");
+                    await s.ValidateJoin(
+                        c,
+                        field.Join ?? throw new ApiError(400, "Join configuration required."),
+                        cols
+                    );
+                }
                 continue;
             }
+            if (field.Formula != null)
+                throw new ApiError(400, "Only formula fields may define a formula.");
             if (field.Join != null)
                 throw new ApiError(400, "Only joined fields may define a join.");
             LayoutRules.Validate(field, cols.Single(x => x.Name == field.Name));
@@ -601,6 +615,7 @@ admin.MapPut(
             else if (field.Lookup != null)
                 throw new ApiError(400, "Only lookup controls may have lookup configuration.");
         }
+        await s.ValidateCopyMappings(c, fields, cols);
         var l = await db.Layouts.SingleOrDefaultAsync(x =>
             x.ConnectionId == id && x.Table == table
         );
@@ -668,6 +683,32 @@ api.MapGet(
     }
 );
 api.MapPost(
+    "/{id:int}/tables/{table}/lookups/{field}/copy",
+    async (
+        int id,
+        string table,
+        string field,
+        LookupCopyInput input,
+        AppDb db,
+        DatabaseService s,
+        HttpContext ctx
+    ) =>
+    {
+        var config = await Access(db, ctx, id, table, "read");
+        var layout = await db.Layouts.SingleOrDefaultAsync(x =>
+            x.ConnectionId == id && x.Table == table
+        );
+        var fields = DatabaseService.LayoutFields(layout?.FieldsJson);
+        var lookup =
+            fields.SingleOrDefault(f => f.Name == field && f.Widget == "lookup")?.Lookup
+            ?? throw new ApiError(404, "Lookup not configured.");
+        await Access(db, ctx, id, lookup.Table, "read");
+        await using var c = await s.Open(config);
+        await s.ValidateCopyMappings(c, fields, await s.Columns(c, table));
+        return new { values = await s.CopyLookupValues(c, lookup, input.Key) };
+    }
+);
+api.MapPost(
     "/{id:int}/tables/{table}/joins/resolve",
     async (int id, string table, JoinInput input, AppDb db, DatabaseService s, HttpContext ctx) =>
     {
@@ -714,7 +755,12 @@ api.MapPost(
             columns,
             [row]
         );
-        return new { values = row.JoinedValues, columns = joinedColumns };
+        return new
+        {
+            values = row.JoinedValues,
+            columns = joinedColumns,
+            calculationErrors = row.CalculationErrors,
+        };
     }
 );
 foreach (var operation in new[] { "create", "update", "delete" })
@@ -740,27 +786,31 @@ foreach (var operation in new[] { "create", "update", "delete" })
                     x.ConnectionId == id && x.Table == table
                 );
                 fields = DatabaseService.LayoutFields(layout?.FieldsJson);
-                if (fields.Any(f => f.Widget == "join" && input.Values.ContainsKey(f.Name)))
+                if (
+                    fields.Any(f =>
+                        (f.Widget is "join" or "formula") && input.Values.ContainsKey(f.Name)
+                    )
+                )
                     throw new ApiError(
                         400,
-                        "Joined fields are read-only and cannot be submitted as stored values."
+                        "Computed fields are read-only and cannot be submitted as stored values."
                     );
-                LayoutRules.ValidateDropdownValues(
-                    DatabaseService.LayoutFields(layout?.FieldsJson),
-                    input.Values
-                );
                 foreach (
                     var field in DatabaseService
                         .LayoutFields(layout?.FieldsJson)
                         .Where(f => f.Widget == "lookup" && f.Lookup != null)
                 )
                 {
+                    if (!input.Values.TryGetValue(field.Name, out var key))
+                        continue;
                     if (
-                        !input.Values.TryGetValue(field.Name, out var key)
-                        || key.ValueKind == JsonValueKind.Null
+                        key.ValueKind == JsonValueKind.Null
+                        && field.Lookup!.CopyMappings is not { Count: > 0 }
                     )
                         continue;
                     await Access(db, ctx, id, field.Lookup!.Table, "read");
+                    if (key.ValueKind == JsonValueKind.Null)
+                        continue;
                     if (key.ValueKind is not JsonValueKind.Number and not JsonValueKind.String)
                         throw new ApiError(400, "Lookup keys must be strings or numbers.");
                     var labels = await s.LookupLabels(
@@ -837,6 +887,7 @@ static async Task<List<ColumnInfo>> PopulateJoins(
                 ? joined.GetValueOrDefault(DatabaseService.KeyText(key))
                 : null;
     }
+    result.AddRange(Formulas.Populate(fields, sourceColumns, rows));
     return result;
 }
 

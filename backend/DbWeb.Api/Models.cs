@@ -57,7 +57,8 @@ public record LayoutField(
     bool ShowInList = true,
     int? ListOrder = null,
     JoinConfig? Join = null,
-    bool Required = false
+    bool Required = false,
+    string? Formula = null
 );
 
 public class AuditEntry
@@ -121,13 +122,19 @@ public record LookupConfig(
     string Table,
     string KeyColumn,
     string DisplayColumn,
-    List<string> SearchColumns
+    List<string> SearchColumns,
+    List<LookupCopyMapping>? CopyMappings = null
 );
+
+public record LookupCopyMapping(string SourceColumn, string DestinationColumn);
+
+public record LookupCopyInput(System.Text.Json.JsonElement Key);
 
 public record RecordRow(Dictionary<string, object?> Values, string Version)
 {
     public Dictionary<string, string?> DisplayValues { get; } = new();
     public Dictionary<string, object?> JoinedValues { get; } = new();
+    public Dictionary<string, string> CalculationErrors { get; } = new();
 }
 
 public record RecordPage(

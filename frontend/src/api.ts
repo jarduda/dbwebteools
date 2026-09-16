@@ -56,6 +56,7 @@ export type Row = {
   version: string;
   displayValues?: Record<string, string | null>;
   joinedValues?: Record<string, unknown>;
+  calculationErrors?: Record<string, string>;
 };
 export type Page = {
   total: number;
@@ -81,6 +82,7 @@ export type Field = {
   listOrder?: number | null;
   join?: Join | null;
   required?: boolean;
+  formula?: string | null;
 };
 export type Grant = {
   userId: number;
@@ -97,6 +99,7 @@ export type Lookup = {
   keyColumn: string;
   displayColumn: string;
   searchColumns: string[];
+  copyMappings?: { sourceColumn: string; destinationColumn: string }[] | null;
 };
 
 export type DropdownOption = { key: string; display: string };

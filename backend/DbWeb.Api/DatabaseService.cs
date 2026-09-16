@@ -277,6 +277,8 @@ public partial class DatabaseService(IDataProtectionProvider protection)
         }
         if (operation == "update" && input.Values.Count == 0)
             throw new ApiError(400, "Provide at least one field.");
+        if (operation != "delete")
+            await ValidateCopyMappings(db, fields ?? [], cols);
         await using var tx = await db.BeginTransactionAsync();
         await using var cmd = db.CreateCommand();
         cmd.Transaction = tx;
@@ -305,7 +307,20 @@ public partial class DatabaseService(IDataProtectionProvider protection)
                 throw new ApiError(409, "This record changed. Refresh before saving.");
         }
         if (operation != "delete")
+        {
+            foreach (
+                var field in (fields ?? []).Where(f =>
+                    f.Widget == "lookup" && f.Lookup?.CopyMappings is { Count: > 0 }
+                )
+            )
+                if (input.Values.TryGetValue(field.Name, out var selectedKey))
+                    foreach (
+                        var copied in await CopyLookupValues(db, field.Lookup!, selectedKey, tx)
+                    )
+                        input.Values[copied.Key] = copied.Value;
+            LayoutRules.ValidateDropdownValues(fields ?? [], input.Values);
             LayoutRules.ValidateRequiredValues(fields ?? [], input.Values, current);
+        }
         var names = input.Values.Keys.ToList();
         for (int i = 0; i < names.Count; i++)
             cmd.Parameters.AddWithValue(

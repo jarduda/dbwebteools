@@ -100,6 +100,42 @@ The scripts restore locked dependencies, build with warnings as errors, run back
 
 To exercise real MariaDB CRUD locally, set `MARIADB_TEST_CONNECTION` to a connection string for a **disposable test database**, then run the script. The integration tests create and drop only randomly named test tables. CI always requires and runs this test against a MariaDB service. Without this environment variable, local runs do not exercise the database integration scenario.
 
+## Lookup copies and calculated fields
+
+In **Administration → Editor layouts**, choose **Lookup** for a stored relation column. Under **Copy values to this table**, add source-column → destination-column mappings. Source and destination types must be compatible; destinations must be distinct, writable non-key columns and cannot themselves be lookups. Up to 20 mappings are supported per lookup, within the same connection.
+
+Selecting or replacing a lookup copies the additional values into the editor. Saving re-reads those source values on the backend and applies the copies inside the record transaction, before dropdown, required-field, and database validation. The backend overrides submitted destination values whenever the lookup key is submitted. Clearing the lookup copies NULL (required/non-nullable destinations can therefore prevent saving). Unrelated edits leave the stored copies unchanged: these are snapshots, unlike joined fields. Related-table read permission is required for selection, preview, and copying. Mappings do not alter database schema.
+
+Choose **Add formula field** to display a read-only calculation in the editor and/or list. Configure its label, section, visibility and order like other fields. Formulas use stored column names in square brackets and are evaluated **only by the backend**, including debounced editor previews. They are never submitted as stored columns or included in record versions. They cannot be used for list sorting/filtering and cannot reference other formula/joined fields.
+
+Examples:
+
+```text
+Round([unit_price] * [quantity], 2)
+Concat(Upper(Trim([name])), ' — ', [code])
+Replace([description], 'old', 'new')
+Substring([code], 0, 3)
+Coalesce([discount], 0)
+if([quantity] > 0, [amount] / [quantity], 0)
+```
+
+Supported operations: `+ - * / %`, comparisons, boolean expressions; `Round(value, places)`, `Abs`, `Floor`, `Ceiling`, `Min(a,b)`, `Max(a,b)`, `Concat`, `Upper`, `Lower`, `Trim`, `Length`, `Substring(text,start,length)`, `Replace(text,from,to)`, `Coalesce(value,fallback,...)`, and `if(condition,yes,no)`. Function names are case-sensitive, substring indexes start at zero, and Round uses midpoint-to-even. Arithmetic/math functions propagate NULL; text functions treat NULL as empty text. Decimal computations preserve database precision within .NET decimal limits; results travel as strings, not imprecise JavaScript numbers. Errors such as division by zero or out-of-range values display a per-field calculation error without breaking the record list.
+
+[NCalc](https://github.com/ncalc/ncalc) supplies the expression parser/interpreter. Only documented functions/operators and existing scalar stored columns are accepted—no SQL or arbitrary code. Limits: 20 total joined/formula fields, 1,024 expression characters, 32 nested expression levels, 8,192 input/output text characters, and an evaluation deadline.
+
+### Browser tests
+
+All Playwright specs, configuration, and dependencies now live in `tests/playwright` (not the frontend). Build scripts install its locked dependencies. After starting a **disposable** MariaDB test server and seeding `tests/fixtures/browser.sql`:
+
+```bash
+npm --prefix tests/playwright ci
+cd tests/playwright
+npx playwright install --with-deps chromium
+npm test
+```
+
+The local fixture uses `127.0.0.1:33079`, database `dbweb_tests`, root with an empty password; CI uses its isolated MariaDB service instead. Never point these tests at a real database. Playwright starts separate API/frontend processes on ports 5190/5173; use a fresh `RUNNER_TEMP` directory for isolated application metadata. Results and screenshots are written under `artifacts/`.
+
 ## Architecture
 
 ```text
@@ -108,7 +144,8 @@ backend/DbWeb.Api/        HTTP API, authentication/authorization, application me
   Models.cs              EF Core SQLite application metadata (never target data)
   DatabaseService.cs     MariaDB schema inspection and transactional record operations
   Program.cs             Composition root and authenticated endpoint mappings
-tests/DbWeb.Tests/        HTTP security tests and real MariaDB integration test
+tests/DbWeb.Tests/        HTTP security, formula, and real MariaDB integration tests
+tests/playwright/        Browser specs, runner configuration and locked dependencies
 scripts/                 Bash and PowerShell build entrypoints
 .github/workflows/       PR validation, release artifacts, container publication
 ```

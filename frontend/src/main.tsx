@@ -395,7 +395,9 @@ function Records({
         )
       : [];
   const joined = (name: string) =>
-    settings?.fields.some((f) => f.name === name && f.widget === "join");
+    settings?.fields.some(
+      (f) => f.name === name && ["join", "formula"].includes(f.widget),
+    );
   return (
     <>
       <section className="card">
@@ -474,7 +476,9 @@ function Records({
                     <button
                       disabled={joined(c.name)}
                       title={
-                        joined(c.name) ? "Read-only joined field" : undefined
+                        joined(c.name)
+                          ? "Read-only calculated field"
+                          : undefined
                       }
                       onClick={() => {
                         setSort(c.name);
@@ -500,7 +504,14 @@ function Records({
                   {displayColumns.map((c) => (
                     <td key={c.name}>
                       {joined(c.name) ? (
-                        !(c.name in (r.joinedValues || {})) ? (
+                        r.calculationErrors?.[c.name] ? (
+                          <span
+                            className="lookup-error"
+                            title={r.calculationErrors[c.name]}
+                          >
+                            Calculation error
+                          </span>
+                        ) : !(c.name in (r.joinedValues || {})) ? (
                           <span className="null">Unavailable</span>
                         ) : r.joinedValues?.[c.name] == null ? (
                           <span className="null">NULL</span>
@@ -669,19 +680,30 @@ export function RecordEditor({
   const [joinedValues, setJoinedValues] = useState<Record<string, unknown>>(
     row?.joinedValues || {},
   );
+  const [calculationErrors, setCalculationErrors] = useState<
+    Record<string, string>
+  >(row?.calculationErrors || {});
+  const [copyBusy, setCopyBusy] = useState(false);
+  const [copiedLookups, setCopiedLookups] = useState<string[]>([]);
   const [joinBusy, setJoinBusy] = useState(false),
     [joinError, setJoinError] = useState("");
   const joinConfig = JSON.stringify(
-    fields.filter((f) => f.widget === "join" && f.join),
+    fields.filter(
+      (f) => (f.widget === "join" && f.join) || f.widget === "formula",
+    ),
   );
   const joinRequest = JSON.stringify(
     Object.fromEntries(
-      fields
-        .filter((f) => f.widget === "join" && f.join)
-        .map((f) => [
-          f.join!.sourceColumn,
-          values[f.join!.sourceColumn] ?? null,
-        ]),
+      columns
+        .filter(
+          (c) =>
+            !fields.some(
+              (f) =>
+                f.name === c.name && ["join", "formula"].includes(f.widget),
+            ),
+        )
+        .filter((c) => c.name in values)
+        .map((c) => [c.name, values[c.name] ?? null]),
     ),
   );
   useEffect(() => {
@@ -691,13 +713,15 @@ export function RecordEditor({
     setJoinError("");
     setJoinedValues({});
     const timer = setTimeout(() => {
-      api<{ values: Record<string, unknown> }>(
-        base + "/joins/resolve",
-        "POST",
-        { values: JSON.parse(joinRequest) },
-      )
+      api<{
+        values: Record<string, unknown>;
+        calculationErrors?: Record<string, string>;
+      }>(base + "/joins/resolve", "POST", { values: JSON.parse(joinRequest) })
         .then((r) => {
-          if (active) setJoinedValues(r.values);
+          if (active) {
+            setJoinedValues(r.values);
+            setCalculationErrors(r.calculationErrors || {});
+          }
         })
         .catch((e) => {
           if (active) setJoinError(e.message);
@@ -717,7 +741,7 @@ export function RecordEditor({
       !c.generated &&
       !c.autoIncrement &&
       !(row && c.primaryKey) &&
-      layout(c)?.widget !== "join",
+      !["join", "formula"].includes(layout(c)?.widget || ""),
   );
   const emptyRequired = (c: Column) =>
     layout(c)?.required &&
@@ -728,6 +752,7 @@ export function RecordEditor({
       <form
         onSubmit={async (e) => {
           e.preventDefault();
+          if (copyBusy) return;
           setBusy(true);
           setError("");
           try {
@@ -754,7 +779,9 @@ export function RecordEditor({
                   (c) =>
                     !(layout(c)?.readOnly || layout(c)?.hidden) &&
                     c.name in values &&
-                    (!row || values[c.name] !== row.values[c.name]),
+                    (!row ||
+                      values[c.name] !== row.values[c.name] ||
+                      copiedLookups.includes(c.name)),
                 )
                 .map((c) => [c.name, values[c.name]]),
             );
@@ -792,7 +819,15 @@ export function RecordEditor({
                   c.generated ||
                   c.autoIncrement ||
                   !!(row && c.primaryKey) ||
-                  l?.readOnly;
+                  l?.readOnly ||
+                  copyBusy ||
+                  fields.some(
+                    (f) =>
+                      copiedLookups.includes(f.name) &&
+                      f.lookup?.copyMappings?.some(
+                        (m) => m.destinationColumn === c.name,
+                      ),
+                  );
               return (
                 <label
                   key={c.name}
@@ -807,7 +842,7 @@ export function RecordEditor({
                       {l?.required ? " · Required" : ""}
                     </small>
                   </span>
-                  {l?.widget === "join" ? (
+                  {l && ["join", "formula"].includes(l.widget) ? (
                     <input
                       aria-label={l.label || c.name}
                       readOnly
@@ -815,11 +850,13 @@ export function RecordEditor({
                       value={
                         joinBusy
                           ? "Loading…"
-                          : !(c.name in joinedValues)
-                            ? "Unavailable"
-                            : joinedValues[c.name] == null
-                              ? "NULL"
-                              : cellText(joinedValues[c.name], c)
+                          : calculationErrors[c.name]
+                            ? "Calculation error: " + calculationErrors[c.name]
+                            : !(c.name in joinedValues)
+                              ? "Unavailable"
+                              : joinedValues[c.name] == null
+                                ? "NULL"
+                                : cellText(joinedValues[c.name], c)
                       }
                     />
                   ) : l?.widget === "lookup" && l.lookup ? (
@@ -831,9 +868,32 @@ export function RecordEditor({
                       value={values[c.name]}
                       disabled={disabled}
                       nullable={c.nullable && !l.required}
-                      change={(key) =>
-                        setValues((v) => ({ ...v, [c.name]: key }))
-                      }
+                      change={async (key) => {
+                        if (!l.lookup?.copyMappings?.length) {
+                          setValues((v) => ({ ...v, [c.name]: key }));
+                          return;
+                        }
+                        setCopyBusy(true);
+                        try {
+                          const result = await api<{
+                            values: Record<string, unknown>;
+                          }>(
+                            `${base}/lookups/${encodeURIComponent(c.name)}/copy`,
+                            "POST",
+                            { key },
+                          );
+                          setValues((v) => ({
+                            ...v,
+                            ...result.values,
+                            [c.name]: key,
+                          }));
+                          setCopiedLookups((old) => [
+                            ...new Set([...old, c.name]),
+                          ]);
+                        } finally {
+                          setCopyBusy(false);
+                        }
+                      }}
                     />
                   ) : widget === "dropdown" ? (
                     <select
@@ -994,7 +1054,7 @@ export function RecordEditor({
           <button type="button" onClick={close}>
             Cancel
           </button>
-          <button className="primary" disabled={busy}>
+          <button className="primary" disabled={busy || copyBusy}>
             {busy ? "Saving…" : "Save record"}
           </button>
         </div>
@@ -1167,7 +1227,7 @@ function Admin({
                     widget: "auto",
                   },
               ),
-              ...s.fields.filter((f) => f.widget === "join"),
+              ...s.fields.filter((f) => ["join", "formula"].includes(f.widget)),
             ]);
           }
         })
@@ -1465,6 +1525,9 @@ function Admin({
                       <tr key={f.name}>
                         <td>
                           {f.name}
+                          {f.widget === "formula" && (
+                            <span className="badge">Formula</span>
+                          )}
                           {f.widget === "join" && (
                             <span className="badge">Joined</span>
                           )}
@@ -1484,7 +1547,9 @@ function Admin({
                               <select
                                 aria-label={`${f.name} control`}
                                 value={f[k]}
-                                disabled={f.widget === "join"}
+                                disabled={["join", "formula"].includes(
+                                  f.widget,
+                                )}
                                 onChange={(e) =>
                                   setFields(
                                     fields.map((x, j) =>
@@ -1506,6 +1571,14 @@ function Admin({
                                   )
                                 }
                               >
+                                {f.widget === "formula" && (
+                                  <option value="formula">
+                                    Formula (read-only)
+                                  </option>
+                                )}
+                                {f.widget === "formula" && (
+                                  <span className="badge">Formula</span>
+                                )}
                                 {f.widget === "join" && (
                                   <option value="join">
                                     Joined (read-only)
@@ -1537,7 +1610,8 @@ function Admin({
                               <input
                                 aria-label={`${f.name} ${k}`}
                                 disabled={
-                                  f.widget === "join" && k === "readOnly"
+                                  ["join", "formula"].includes(f.widget) &&
+                                  k === "readOnly"
                                 }
                                 type={
                                   k === "hidden" || k === "readOnly"
@@ -1654,7 +1728,8 @@ function Admin({
                 disabled={
                   layoutLoading ||
                   !fields.length ||
-                  fields.filter((f) => f.widget === "join").length >= 20
+                  fields.filter((f) => ["join", "formula"].includes(f.widget))
+                    .length >= 20
                 }
                 onClick={() => {
                   let n = 1;
@@ -1686,6 +1761,91 @@ function Admin({
               >
                 Add joined field
               </button>
+              <button
+                type="button"
+                disabled={
+                  layoutLoading ||
+                  !fields.length ||
+                  fields.filter((f) => ["join", "formula"].includes(f.widget))
+                    .length >= 20
+                }
+                onClick={() => {
+                  let n = 1;
+                  while (
+                    fields.some((f) => f.name.toLowerCase() === `formula_${n}`)
+                  )
+                    n++;
+                  setFields((old) => [
+                    ...old,
+                    {
+                      name: `formula_${n}`,
+                      label: "Calculated value",
+                      section: "",
+                      order: old.length,
+                      hidden: false,
+                      readOnly: true,
+                      widget: "formula",
+                      formula: "",
+                      showInList: true,
+                    },
+                  ]);
+                }}
+              >
+                Add formula field
+              </button>
+              {fields
+                .filter((f) => f.widget === "formula")
+                .map((f) => (
+                  <fieldset
+                    className="lookup-config formula-config"
+                    key={f.name}
+                  >
+                    <legend>{f.name} formula</legend>
+                    <label>
+                      Expression
+                      <textarea
+                        aria-label={`${f.name} expression`}
+                        maxLength={1024}
+                        value={f.formula || ""}
+                        onChange={(e) =>
+                          setFields((old) =>
+                            old.map((x) =>
+                              x.name === f.name
+                                ? { ...x, formula: e.target.value }
+                                : x,
+                            ),
+                          )
+                        }
+                      />
+                    </label>
+                    <p>
+                      Calculated on the server; never saved as a database
+                      column. Use stored columns in square brackets. Examples:{" "}
+                      <code>Round([price] * [quantity], 2)</code> or{" "}
+                      <code>Concat(Upper([name]), ' — ', [code])</code>.
+                    </p>
+                    <p>
+                      Math: + − * / %, Round, Abs, Floor, Ceiling, Min, Max.
+                      Text: Concat, Upper, Lower, Trim, Length, Substring(text,
+                      start, length), Replace. Also: Coalesce(value, fallback),
+                      if(condition, yes, no). Function names are case-sensitive;
+                      substring starts at zero.
+                    </p>
+                    <p>
+                      Available columns:{" "}
+                      {layoutColumns.map((c) => `[${c.name}]`).join(", ")}
+                    </p>
+                    <button
+                      type="button"
+                      aria-label={`Remove ${f.name}`}
+                      onClick={() =>
+                        setFields((old) => old.filter((x) => x.name !== f.name))
+                      }
+                    >
+                      Remove formula field
+                    </button>
+                  </fieldset>
+                ))}
               {fields
                 .filter((f) => f.widget === "join")
                 .map((f) => (
@@ -1695,7 +1855,7 @@ function Admin({
                     connection={connection}
                     tables={tables}
                     sources={fields
-                      .filter((x) => x.widget !== "join")
+                      .filter((x) => !["join", "formula"].includes(x.widget))
                       .map((x) => x.name)}
                     change={(join) =>
                       setFields((old) =>
@@ -1733,6 +1893,12 @@ function Admin({
                     name={f.name}
                     connection={connection}
                     tables={tables}
+                    destinations={layoutColumns.filter(
+                      (c) =>
+                        !fields.some(
+                          (x) => x.name === c.name && x.widget === "lookup",
+                        ),
+                    )}
                     value={f.lookup}
                     change={(lookup) =>
                       setFields((old) =>

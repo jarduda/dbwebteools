@@ -13,12 +13,14 @@ export function LookupConfiguration({
   name,
   connection,
   tables,
+  destinations,
   value,
   change,
 }: {
   name: string;
   connection: number;
   tables: string[];
+  destinations: Column[];
   value?: Lookup | null;
   change: (value: Lookup) => void;
 }) {
@@ -136,6 +138,93 @@ export function LookupConfiguration({
             ))}
         </div>
       </fieldset>
+      <fieldset>
+        <legend>Copy values to this table</legend>
+        <p>
+          Choosing a record copies these values. Saving re-reads them from the
+          lookup table. Clearing the lookup copies NULL. Other edits keep the
+          stored copy unchanged.
+        </p>
+        {(current.copyMappings || []).map((m, i) => (
+          <div className="dropdown-option" key={i}>
+            <label>
+              Source column
+              <select
+                aria-label={`${name} copy ${i + 1} source`}
+                value={m.sourceColumn}
+                onChange={(e) =>
+                  change({
+                    ...current,
+                    copyMappings: current.copyMappings!.map((x, j) =>
+                      j === i ? { ...x, sourceColumn: e.target.value } : x,
+                    ),
+                  })
+                }
+              >
+                <option value="">Choose source…</option>
+                {schema?.columns.map((c) => (
+                  <option key={c.name}>{c.name}</option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Destination column
+              <select
+                aria-label={`${name} copy ${i + 1} destination`}
+                value={m.destinationColumn}
+                onChange={(e) =>
+                  change({
+                    ...current,
+                    copyMappings: current.copyMappings!.map((x, j) =>
+                      j === i ? { ...x, destinationColumn: e.target.value } : x,
+                    ),
+                  })
+                }
+              >
+                <option value="">Choose destination…</option>
+                {destinations
+                  .filter(
+                    (c) =>
+                      c.name !== name &&
+                      !c.primaryKey &&
+                      !c.generated &&
+                      !c.autoIncrement,
+                  )
+                  .map((c) => (
+                    <option key={c.name}>{c.name}</option>
+                  ))}
+              </select>
+            </label>
+            <button
+              type="button"
+              aria-label={`Remove ${name} copy ${i + 1}`}
+              onClick={() =>
+                change({
+                  ...current,
+                  copyMappings: current.copyMappings!.filter((_, j) => j !== i),
+                })
+              }
+            >
+              Remove mapping
+            </button>
+          </div>
+        ))}
+        <button
+          type="button"
+          disabled={!schema || (current.copyMappings?.length || 0) >= 20}
+          onClick={() =>
+            change({
+              ...current,
+              copyMappings: [
+                ...(current.copyMappings || []),
+                { sourceColumn: "", destinationColumn: "" },
+              ],
+            })
+          }
+        >
+          Add copy mapping
+        </button>
+      </fieldset>
       {schema && schema.lookupKeys.length === 0 && (
         <p role="alert">
           This table needs a single-column primary or unique key.
@@ -163,9 +252,22 @@ export function LookupInput({
   value: unknown;
   disabled?: boolean;
   nullable: boolean;
-  change: (key: unknown) => void;
+  change: (key: unknown) => void | Promise<void>;
 }) {
   const [open, setOpen] = useState(false);
+  const [copyBusy, setCopyBusy] = useState(false);
+  async function choose(key: unknown) {
+    setCopyBusy(true);
+    setError("");
+    try {
+      await change(key);
+      setOpen(false);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setCopyBusy(false);
+    }
+  }
   const [display, setDisplay] = useState("");
   const [error, setError] = useState("");
   const url = `${base}/lookups/${encodeURIComponent(name)}`;
@@ -196,13 +298,13 @@ export function LookupInput({
         <input
           aria-label={label}
           readOnly
-          disabled={disabled}
+          disabled={disabled || copyBusy}
           value={value == null || value === "" ? "" : display || String(value)}
           placeholder="Select a related record…"
         />
         <button
           type="button"
-          disabled={disabled}
+          disabled={disabled || copyBusy}
           aria-label={`Choose ${label}`}
           onClick={() => setOpen(true)}
         >
@@ -212,7 +314,8 @@ export function LookupInput({
           <button
             type="button"
             aria-label={`Clear ${label}`}
-            onClick={() => change(null)}
+            disabled={copyBusy}
+            onClick={() => void choose(null)}
           >
             Clear
           </button>
@@ -230,9 +333,10 @@ export function LookupInput({
           label={label}
           lookup={lookup}
           close={() => setOpen(false)}
+          busy={copyBusy}
+          error={error}
           select={(key) => {
-            change(key);
-            setOpen(false);
+            void choose(key);
           }}
         />
       )}
@@ -241,6 +345,8 @@ export function LookupInput({
 }
 
 function LookupDialog({
+  busy: selecting,
+  error: selectionError,
   url,
   label,
   lookup,
@@ -252,6 +358,8 @@ function LookupDialog({
   lookup: Lookup;
   close: () => void;
   select: (key: unknown) => void;
+  busy: boolean;
+  error: string;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const [search, setSearch] = useState("");
@@ -320,6 +428,11 @@ function LookupDialog({
           setPage(1);
         }}
       />
+      {selectionError && (
+        <div className="alert" role="alert">
+          {selectionError}
+        </div>
+      )}
       {error && (
         <div className="alert" role="alert">
           {error}
@@ -349,6 +462,7 @@ function LookupDialog({
                       <button
                         type="button"
                         className="secondary"
+                        disabled={selecting}
                         aria-label={`Select ${r[lookup.displayColumn] ?? "record"} (${r[lookup.keyColumn]})`}
                         onClick={() => select(r[lookup.keyColumn])}
                       >
