@@ -104,6 +104,7 @@ using (var scope = app.Services.CreateScope())
     var db = scope.ServiceProvider.GetRequiredService<AppDb>();
     db.Database.EnsureCreated();
     PageSchema.EnsureCreated(db);
+    FieldAccess.EnsureCreated(db);
     if (!db.Users.Any())
     {
         var password = builder.Configuration["Bootstrap:Password"];
@@ -329,6 +330,7 @@ admin.MapDelete(
     "/connections/{id:int}",
     async (int id, AppDb db) =>
     {
+        await db.FieldPolicies.Where(x => x.ConnectionId == id).ExecuteDeleteAsync();
         await db.Grants.Where(x => x.ConnectionId == id).ExecuteDeleteAsync();
         await db.Layouts.Where(x => x.ConnectionId == id).ExecuteDeleteAsync();
         await db.Pages.Where(x => x.ConnectionId == id).ExecuteDeleteAsync();
@@ -346,7 +348,27 @@ admin.MapPost(
         return Results.Ok(new { tables = (await service.Tables(c)).Count });
     }
 );
-admin.MapGet("/grants", async (AppDb db) => await db.Grants.ToListAsync());
+admin.MapGet(
+    "/grants",
+    async (AppDb db) =>
+    {
+        var grants = await db.Grants.ToListAsync();
+        var policies = await db.FieldPolicies.ToListAsync();
+        foreach (var grant in grants)
+        {
+            var policy = policies.Find(p =>
+                p.UserId == grant.UserId
+                && p.ConnectionId == grant.ConnectionId
+                && p.Table == grant.Table
+            );
+            grant.Fields =
+                policy == null
+                    ? null
+                    : JsonSerializer.Deserialize<Dictionary<string, string>>(policy.FieldsJson);
+        }
+        return grants;
+    }
+);
 admin.MapPut(
     "/grants",
     async (TableGrant i, AppDb db, DatabaseService s) =>
@@ -357,7 +379,41 @@ admin.MapPut(
             await db.Connections.FindAsync(i.ConnectionId)
             ?? throw new ApiError(404, "Connection not found.");
         await using var conn = await s.Open(c);
-        await s.Columns(conn, i.Table);
+        var columns = await s.Columns(conn, i.Table);
+        var layout = await db.Layouts.SingleOrDefaultAsync(l =>
+            l.ConnectionId == i.ConnectionId && l.Table == i.Table
+        );
+        var names = columns
+            .Select(c => c.Name)
+            .Concat(DatabaseService.LayoutFields(layout?.FieldsJson).Select(f => f.Name))
+            .ToHashSet();
+        if (i.Fields != null)
+        {
+            if (
+                i.Fields.Count > 2000
+                || i.Fields.Any(f =>
+                    !names.Contains(f.Key) || f.Value is not "none" and not "read" and not "write"
+                )
+            )
+                throw new ApiError(
+                    400,
+                    "Choose existing fields and No access, Read or Write levels."
+                );
+            var policy = await db.FieldPolicies.SingleOrDefaultAsync(p =>
+                p.UserId == i.UserId && p.ConnectionId == i.ConnectionId && p.Table == i.Table
+            );
+            if (policy == null)
+            {
+                policy = new()
+                {
+                    UserId = i.UserId,
+                    ConnectionId = i.ConnectionId,
+                    Table = i.Table,
+                };
+                db.FieldPolicies.Add(policy);
+            }
+            policy.FieldsJson = JsonSerializer.Serialize(i.Fields);
+        }
         var g = await db.Grants.SingleOrDefaultAsync(x =>
             x.UserId == i.UserId && x.ConnectionId == i.ConnectionId && x.Table == i.Table
         );
@@ -448,6 +504,24 @@ api.MapGet(
             x.ConnectionId == id && x.Table == table
         );
         var definition = DatabaseService.Layout(layout?.FieldsJson);
+        var columns = await s.Columns(c, table);
+        var access = await FieldAccess.For(db, ctx, id, table);
+        var safeFields = await FieldAccess.VisibleFields(
+            db,
+            ctx,
+            id,
+            table,
+            definition.Fields,
+            columns
+        );
+        var blocked = definition
+            .Fields.Where(f => !safeFields.Any(x => x.Name == f.Name))
+            .Select(f => f.Name)
+            .ToHashSet();
+        var readable = columns
+            .Where(col => access.Read(col.Name) && !blocked.Contains(col.Name))
+            .Select(col => col.Name)
+            .ToHashSet();
         var result = await s.List(
             c,
             table,
@@ -457,17 +531,18 @@ api.MapGet(
             descending ?? false,
             search,
             definition.View,
-            definition.Fields
+            definition.Fields,
+            readable: readable
         );
-        await Decorate(db, ctx, id, c, s, definition.Fields, result);
+        await Decorate(db, ctx, id, table, c, s, definition.Fields, result);
         return result;
     }
 );
 api.MapGet(
     "/{id:int}/tables/{table}/settings",
-    async (int id, string table, AppDb db, HttpContext ctx) =>
+    async (int id, string table, AppDb db, DatabaseService service, HttpContext ctx) =>
     {
-        await Access(db, ctx, id, table, "read");
+        var config = await Access(db, ctx, id, table, "read");
         var uid = int.Parse(ctx.User.FindFirstValue(ClaimTypes.NameIdentifier)!);
         var grant = ctx.User.IsInRole("Admin")
             ? new TableGrant
@@ -483,11 +558,22 @@ api.MapGet(
         var l = await db.Layouts.SingleOrDefaultAsync(x =>
             x.ConnectionId == id && x.Table == table
         );
+        await using var c = await service.Open(config);
+        var fields = await FieldAccess.VisibleFields(
+            db,
+            ctx,
+            id,
+            table,
+            DatabaseService.LayoutFields(l?.FieldsJson),
+            await service.Columns(c, table)
+        );
+        var access = await FieldAccess.For(db, ctx, id, table);
         return new
         {
             grant,
-            fields = DatabaseService.LayoutFields(l?.FieldsJson),
-            view = DatabaseService.Layout(l?.FieldsJson).View ?? new ListView(),
+            fields,
+            view = FieldAccess.PublicView(DatabaseService.Layout(l?.FieldsJson).View, access)
+                ?? new ListView(),
         };
     }
 );
@@ -608,10 +694,13 @@ api.MapGet(
     {
         var config = await Access(db, ctx, id, table, "read");
         await using var c = await s.Open(config);
+        var access = await FieldAccess.For(db, ctx, id, table);
         return new
         {
-            columns = await s.Columns(c, table),
-            lookupKeys = await s.LookupKeys(c, table),
+            columns = (await s.Columns(c, table))
+                .Where(col => access.Read(col.Name))
+                .Select(access.Column),
+            lookupKeys = (await s.LookupKeys(c, table)).Where(access.Read),
         };
     }
 );
@@ -640,7 +729,14 @@ api.MapGet(
                 .SingleOrDefault(f => f.Name == field && f.Widget == "lookup")
                 ?.Lookup
             ?? throw new ApiError(404, "Lookup not configured.");
-        await Access(db, ctx, id, lookup.Table, "read");
+        (await FieldAccess.For(db, ctx, id, table)).RequireRead([field]);
+        await FieldAccess.Related(
+            db,
+            ctx,
+            id,
+            lookup.Table,
+            [lookup.KeyColumn, lookup.DisplayColumn]
+        );
         await using var c = await s.Open(config);
         if (key != null)
         {
@@ -649,6 +745,7 @@ api.MapGet(
                 new { found = labels.ContainsKey(key), label = labels.GetValueOrDefault(key) }
             );
         }
+        lookup = await FieldAccess.Lookup(db, ctx, id, lookup);
         return Results.Ok(await s.LookupSearch(c, lookup, page ?? 1, size ?? 25, search));
     }
 );
@@ -672,7 +769,11 @@ api.MapPost(
         var lookup =
             fields.SingleOrDefault(f => f.Name == field && f.Widget == "lookup")?.Lookup
             ?? throw new ApiError(404, "Lookup not configured.");
-        await Access(db, ctx, id, lookup.Table, "read");
+        var access = await FieldAccess.For(db, ctx, id, table);
+        access.RequireWrite(
+            new[] { field }.Concat(lookup.CopyMappings?.Select(m => m.DestinationColumn) ?? [])
+        );
+        lookup = await FieldAccess.Lookup(db, ctx, id, lookup, true);
         await using var c = await s.Open(config);
         await s.ValidateCopyMappings(c, fields, await s.Columns(c, table));
         return new { values = await s.CopyLookupValues(c, lookup, input.Key) };
@@ -698,8 +799,17 @@ api.MapPost(
             )
         )
             throw new ApiError(400, "Provide scalar values for existing source columns.");
+        (await FieldAccess.For(db, ctx, id, table)).RequireRead(input.Values.Keys);
         var layout = await db.Layouts.SingleOrDefaultAsync(x =>
             x.ConnectionId == id && x.Table == table
+        );
+        var safeFields = await FieldAccess.VisibleFields(
+            db,
+            ctx,
+            id,
+            table,
+            DatabaseService.LayoutFields(layout?.FieldsJson),
+            columns
         );
         var row = new RecordRow(
             input.Values.ToDictionary(
@@ -715,16 +825,7 @@ api.MapPost(
             ),
             ""
         );
-        var joinedColumns = await PopulateJoins(
-            db,
-            ctx,
-            id,
-            c,
-            s,
-            DatabaseService.LayoutFields(layout?.FieldsJson),
-            columns,
-            [row]
-        );
+        var joinedColumns = await PopulateJoins(db, ctx, id, c, s, safeFields, columns, [row]);
         return new
         {
             values = row.JoinedValues,
@@ -739,7 +840,9 @@ api.MapPost(
     {
         var config = await Access(db, ctx, id, table, "create");
         await using var c = await service.Open(config);
-        return new { values = await RecordWrites.Preview(db, ctx, id, table, service, c) };
+        var values = await RecordWrites.Preview(db, ctx, id, table, service, c);
+        var access = await FieldAccess.For(db, ctx, id, table);
+        return new { values = values.Where(v => access.Read(v.Key)).ToDictionary() };
     }
 );
 foreach (var operation in new[] { "create", "update", "delete" })
@@ -760,6 +863,7 @@ foreach (var operation in new[] { "create", "update", "delete" })
             await using var c = await s.Open(config);
             await using var gate = await SumupGate.Enter(c);
             var plans = await Sumups.Ready(db, s, c, id);
+            input = await FieldAccess.DecodeMutation(db, ctx, id, table, input, op);
             var fields = await RecordWrites.Validate(db, ctx, id, table, input, op, s, c);
             await s.Mutate(c, table, input, op, fields, sumups: plans);
             db.Audit.Add(

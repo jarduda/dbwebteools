@@ -189,6 +189,41 @@ public static class Formulas
         }
     }
 
+    public static HashSet<string> Dependencies(
+        string? formula,
+        List<ColumnInfo>? columns,
+        List<LayoutField> fields
+    )
+    {
+        var expression =
+            columns != null
+                ? Compile(formula, columns, fields)
+                : new Expression(formula ?? "", ExpressionOptions.NoCache);
+        var names = expression.GetParameterNames().Where(n => n != "null").ToHashSet();
+        void Walk(LogicalExpression node)
+        {
+            if (
+                node is Function f
+                && f.Identifier.Name == "DropdownDisplay"
+                && f.Parameters[0] is ValueExpression { Value: string name }
+            )
+                names.Add(name);
+            IEnumerable<LogicalExpression> children = node switch
+            {
+                Function fn => fn.Parameters,
+                BinaryExpression b => [b.LeftExpression, b.RightExpression],
+                UnaryExpression u => [u.Expression],
+                TernaryExpression t => [t.LeftExpression, t.MiddleExpression, t.RightExpression],
+                LogicalExpressionList l => l,
+                _ => [],
+            };
+            foreach (var child in children)
+                Walk(child);
+        }
+        Walk(expression.LogicalExpression!);
+        return names;
+    }
+
     static void ValidateTree(
         LogicalExpression node,
         int depth,

@@ -9,17 +9,27 @@ public static class RecordPresentation
         AppDb db,
         HttpContext ctx,
         int id,
+        string table,
         MySqlConnection c,
         DatabaseService s,
         List<LayoutField> fields,
         RecordPage result
     )
     {
+        var access = await FieldAccess.For(db, ctx, id, table);
+        var originalFields = fields;
+        fields = await FieldAccess.VisibleFields(db, ctx, id, table, fields, result.Columns);
         foreach (var field in fields.Where(f => f.Widget == "lookup" && f.Lookup != null))
         {
             try
             {
-                await Access(db, ctx, id, field.Lookup!.Table, "read");
+                await FieldAccess.Related(
+                    db,
+                    ctx,
+                    id,
+                    field.Lookup!.Table,
+                    [field.Lookup.KeyColumn, field.Lookup.DisplayColumn]
+                );
             }
             catch (ApiError e) when (e.Status == 403)
             {
@@ -41,6 +51,16 @@ public static class RecordPresentation
         result.JoinedColumns.AddRange(
             await PopulateJoins(db, ctx, id, c, s, fields, result.Columns, result.Rows)
         );
+        var blocked = originalFields
+            .Where(f => !fields.Any(v => v.Name == f.Name))
+            .Select(f => f.Name)
+            .ToHashSet();
+        var visible = result
+            .Columns.Where(col => access.Read(col.Name) && !blocked.Contains(col.Name))
+            .Select(col => col.Name)
+            .Concat(fields.Select(f => f.Name))
+            .ToHashSet();
+        FieldAccess.Present(ctx, id, table, access, visible, result);
     }
 
     public static async Task<List<ColumnInfo>> PopulateJoins(
@@ -60,7 +80,13 @@ public static class RecordPresentation
             var join = field.Join!;
             try
             {
-                await Access(db, ctx, id, join.Table, "read");
+                await FieldAccess.Related(
+                    db,
+                    ctx,
+                    id,
+                    join.Table,
+                    [join.KeyColumn, join.ValueColumn]
+                );
             }
             catch (ApiError e) when (e.Status == 403)
             {

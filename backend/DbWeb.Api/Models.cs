@@ -26,6 +26,8 @@ public class DatabaseConnection
 
 public class TableGrant
 {
+    [System.ComponentModel.DataAnnotations.Schema.NotMapped]
+    public Dictionary<string, string>? Fields { get; set; }
     public int Id { get; set; }
     public int UserId { get; set; }
     public int ConnectionId { get; set; }
@@ -74,6 +76,7 @@ public class AuditEntry
 
 public class AppDb(DbContextOptions<AppDb> options) : DbContext(options)
 {
+    public DbSet<FieldPolicy> FieldPolicies => Set<FieldPolicy>();
     public DbSet<AppUser> Users => Set<AppUser>();
     public DbSet<DatabaseConnection> Connections => Set<DatabaseConnection>();
     public DbSet<TableGrant> Grants => Set<TableGrant>();
@@ -83,6 +86,14 @@ public class AppDb(DbContextOptions<AppDb> options) : DbContext(options)
 
     protected override void OnModelCreating(ModelBuilder b)
     {
+        b.Entity<FieldPolicy>()
+            .HasIndex(p => new
+            {
+                p.UserId,
+                p.ConnectionId,
+                p.Table,
+            })
+            .IsUnique();
         b.Entity<PageConfiguration>()
             .HasIndex(x => new
             {
@@ -144,6 +155,7 @@ public record LookupCopyInput(System.Text.Json.JsonElement Key);
 
 public record RecordRow(Dictionary<string, object?> Values, string Version)
 {
+    public string? KeyToken { get; init; }
     public Dictionary<string, string?> DisplayValues { get; } = new();
     public Dictionary<string, object?> JoinedValues { get; } = new();
     public Dictionary<string, string> CalculationErrors { get; } = new();
@@ -157,6 +169,7 @@ public record RecordPage(
     List<RecordRow> Rows
 )
 {
+    public bool HasPrimaryKey { get; set; }
     public List<ColumnInfo> JoinedColumns { get; } = new();
     public string? Sort { get; init; }
     public bool Descending { get; init; }

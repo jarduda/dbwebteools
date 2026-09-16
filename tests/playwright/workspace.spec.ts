@@ -653,7 +653,7 @@ test("list columns and read-only joins refresh when a lookup changes", async ({
   await page.getByRole("button", { name: "Data browser" }).click();
   await expect(
     page.getByText(
-      "No list fields selected. Configure visible fields in Editor layouts.",
+      "No visible list fields. Check the layout and field permissions.",
     ),
   ).toBeVisible();
 });

@@ -13,6 +13,7 @@ import { Plus, Pencil, Search } from "lucide-react";
 import { cellText } from "./field-controls";
 
 export function recordKey(row: Row, columns: Column[]) {
+  if (row.keyToken) return { $record: row.keyToken };
   return Object.fromEntries(
     columns
       .filter((c) => c.primaryKey)

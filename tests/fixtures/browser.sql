@@ -18,3 +18,6 @@ CREATE TABLE IF NOT EXISTS z_page_orders (id INT AUTO_INCREMENT PRIMARY KEY,cust
 INSERT IGNORE INTO z_page_orders (id,customer_id,title,amount) VALUES (1,9007199254740993,'Alice order',25),(2,42,'Bob private order',50);
 CREATE TABLE IF NOT EXISTS z_page_lines (order_id INT,seq INT,title VARCHAR(100),PRIMARY KEY(order_id,seq));
 INSERT IGNORE INTO z_page_lines VALUES (1,1,'Alice first line'),(1,2,'Alice second line'),(2,1,'Bob private line');
+
+CREATE TABLE IF NOT EXISTS z_field_records (id BIGINT AUTO_INCREMENT PRIMARY KEY,name VARCHAR(100),note VARCHAR(100),secret VARCHAR(100));
+INSERT IGNORE INTO z_field_records VALUES(9007199254740993,'Field visible','Read only note','BROWSER_SECRET');

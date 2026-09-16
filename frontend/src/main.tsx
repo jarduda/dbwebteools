@@ -46,7 +46,12 @@ import { CreationDefaultEditor } from "./creation-defaults";
 import { FormulaValidator } from "./formula-validator";
 import { SumupConfiguration } from "./sumups";
 import { PageEditor } from "./page-editor";
-import { PageCell, RecordPageView, parsePageRoute } from "./record-pages";
+import {
+  PageCell,
+  RecordPageView,
+  parsePageRoute,
+  recordKey,
+} from "./record-pages";
 function App() {
   const [user, setUser] = useState<User | null>(null),
     [ready, setReady] = useState(false),
@@ -433,13 +438,14 @@ function Records({
     }, 300);
     return () => clearTimeout(timer);
   }, [search]);
-  const keyFor = (r: Row) =>
-    Object.fromEntries(
-      data!.columns
-        .filter((c) => c.primaryKey)
-        .map((c) => [c.name, r.values[c.name]]),
-    );
-  const mutable = !!data?.columns.some((c) => c.primaryKey);
+  const keyFor = (r: Row) => recordKey(r, data!.columns);
+  const mutable = !!(
+    data?.hasPrimaryKey ?? data?.columns.some((c) => c.primaryKey)
+  );
+  const writableFields = data?.columns.some(
+    (c) =>
+      c.canWrite !== false && !c.primaryKey && !c.generated && !c.autoIncrement,
+  );
   const displayColumns =
     settings && data
       ? listColumns(
@@ -525,7 +531,7 @@ function Records({
         )}
         {settings && data && displayColumns.length === 0 && (
           <div className="notice">
-            No list fields selected. Configure visible fields in Editor layouts.
+            No visible list fields. Check the layout and field permissions.
           </div>
         )}
         <div className="table-scroll" aria-busy={busy}>
@@ -584,7 +590,7 @@ function Records({
                   ))}
                   <td>
                     <div className="actions">
-                      {settings?.grant.update && mutable && (
+                      {settings?.grant.update && mutable && writableFields && (
                         <button
                           className="icon-btn"
                           aria-label={`Edit record ${i + 1}`}
@@ -799,6 +805,7 @@ export function RecordEditor({
   const writable = columns.filter(
     (c) =>
       !lockedFields.includes(c.name) &&
+      c.canWrite !== false &&
       !c.generated &&
       !c.autoIncrement &&
       !(row && c.primaryKey) &&
@@ -885,6 +892,7 @@ export function RecordEditor({
                 widget = widgetFor(c, l),
                 disabled =
                   lockedFields.includes(c.name) ||
+                  c.canWrite === false ||
                   c.generated ||
                   c.autoIncrement ||
                   !!(row && c.primaryKey) ||
@@ -1233,6 +1241,7 @@ function Admin({
       update: false,
       delete: false,
     }),
+    [fieldAccess, setFieldAccess] = useState<Grant["fields"]>(null),
     [fields, setFields] = useState<Field[]>([]),
     [layoutColumns, setLayoutColumns] = useState<Column[]>([]),
     [listView, setListView] = useState<ListView>({}),
@@ -1278,12 +1287,13 @@ function Admin({
         g.connectionId === connection && g.userId === uid && g.table === table,
     );
     setGrant(g || { read: false, create: false, update: false, delete: false });
+    setFieldAccess(g?.fields ?? null);
     let active = true;
     setFields([]);
     setListView({});
     setLayoutColumns([]);
-    setLayoutLoading(!!table && view === "layouts");
-    if (table && view === "layouts")
+    setLayoutLoading(!!table && ["layouts", "permissions"].includes(view));
+    if (table && ["layouts", "permissions"].includes(view))
       Promise.all([
         api<{ columns: Column[] }>(
           `/connections/${connection}/tables/${encodeURIComponent(table)}/schema`,
@@ -1549,9 +1559,104 @@ function Admin({
                   </label>
                 ))}
               </div>
+              <section className="field-access" aria-label="Field access">
+                <h3>Field access</h3>
+                <p>
+                  No access hides the field and its values. Read allows viewing.
+                  Write allows editing when table permissions also allow it.
+                  Administrators retain full access. Calculated fields remain
+                  read-only.
+                </p>
+                {!fieldAccess && (
+                  <p className="notice">
+                    Existing grant inherits full field access. Saving creates an
+                    explicit policy; new fields will then default to No access.
+                  </p>
+                )}
+                <div
+                  className="actions"
+                  role="group"
+                  aria-label="Set all field access"
+                >
+                  {(
+                    [
+                      ["none", "No access"],
+                      ["read", "Read"],
+                      ["write", "Write"],
+                    ] as const
+                  ).map(([level, label]) => (
+                    <button
+                      type="button"
+                      key={level}
+                      disabled={layoutLoading || !fields.length}
+                      onClick={() =>
+                        setFieldAccess(
+                          Object.fromEntries(
+                            fields.map((f) => [f.name, level]),
+                          ),
+                        )
+                      }
+                    >
+                      All fields: {label}
+                    </button>
+                  ))}
+                </div>
+                {layoutLoading ? (
+                  <p role="status">Loading fields…</p>
+                ) : (
+                  <div className="table-scroll">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Field</th>
+                          <th>Access</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {fields.map((f) => (
+                          <tr key={f.name}>
+                            <td>
+                              {f.label || f.name}
+                              <small className="field-name">{f.name}</small>
+                            </td>
+                            <td>
+                              <select
+                                aria-label={`${f.name} field access`}
+                                value={
+                                  fieldAccess?.[f.name] ??
+                                  (fieldAccess ? "none" : "write")
+                                }
+                                onChange={(e) =>
+                                  setFieldAccess((old) => ({
+                                    ...(old ??
+                                      Object.fromEntries(
+                                        fields.map((x) => [
+                                          x.name,
+                                          "write" as const,
+                                        ]),
+                                      )),
+                                    [f.name]: e.target.value as
+                                      "none" | "read" | "write",
+                                  }))
+                                }
+                              >
+                                <option value="none">No access</option>
+                                <option value="read">Read</option>
+                                <option value="write">Write</option>
+                              </select>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </section>
               <button
                 className="primary"
-                disabled={busy || !table || !uid}
+                disabled={
+                  busy || layoutLoading || !fields.length || !table || !uid
+                }
                 onClick={() =>
                   action(
                     () =>
@@ -1560,6 +1665,13 @@ function Admin({
                         connectionId: connection,
                         table,
                         ...grant,
+                        fields: Object.fromEntries(
+                          fields.map((f) => [
+                            f.name,
+                            fieldAccess?.[f.name] ??
+                              (fieldAccess ? "none" : "write"),
+                          ]),
+                        ),
                       }),
                     "Permissions saved.",
                   )

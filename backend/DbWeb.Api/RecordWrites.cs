@@ -85,7 +85,10 @@ public static class RecordWrites
                     && field.Lookup!.CopyMappings is not { Count: > 0 }
                 )
                     continue;
-                await Access(db, ctx, id, field.Lookup!.Table, "read");
+                await FieldAccess.Lookup(db, ctx, id, field.Lookup!, true);
+                (await FieldAccess.For(db, ctx, id, table)).RequireWrite(
+                    field.Lookup!.CopyMappings?.Select(m => m.DestinationColumn) ?? []
+                );
                 if (key.ValueKind == JsonValueKind.Null)
                     continue;
                 if (key.ValueKind is not JsonValueKind.Number and not JsonValueKind.String)
