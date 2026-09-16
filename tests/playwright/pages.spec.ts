@@ -594,35 +594,34 @@ test("define pages and drill through related tabs with record keys and browser h
   await expect(editRelated).not.toBeVisible();
   await expect(relatedRow.getByRole("cell").nth(1)).toHaveText("");
   expect((await totals()).order_total).toBe("50.0000");
-  await page.evaluate(
-    async ({ id, stored }) => {
-      const result = await (
-        await fetch(
-          `/api/connections/${id}/tables/z_page_orders/records?search=Created%20from%20parent%20tab`,
-        )
-      ).json();
-      const row = result.rows.find(
-        (r: { values: { id: number } }) => r.values.id === stored.id,
-      );
-      const { token } = await (await fetch("/api/auth/csrf")).json();
-      const response = await fetch(
-        `/api/connections/${id}/tables/z_page_orders/delete`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "X-CSRF-TOKEN": token,
-          },
-          body: JSON.stringify({
-            key: { id: stored.id },
-            values: {},
-            version: row.version,
-          }),
-        },
-      );
-      if (!response.ok) throw new Error("Fixture cleanup failed");
-    },
-    { id, stored },
+  // The UI independently honors the server's delete capability.
+  await page.route("**/api/pages/*/tabs/*/records?*", async (route) => {
+    const response = await route.fetch();
+    const body = await response.json();
+    await route.fulfill({ response, json: { ...body, canDelete: false } });
+  });
+  await page.getByRole("button", { name: "Refresh page", exact: true }).click();
+  await expect(relatedRow).toBeVisible();
+  await expect(
+    relatedRow.getByRole("button", { name: /Delete record/ }),
+  ).toHaveCount(0);
+  await expect(
+    relatedRow.getByRole("button", { name: /Edit record/ }),
+  ).toBeVisible();
+  await page.unroute("**/api/pages/*/tabs/*/records?*");
+  await page.getByRole("button", { name: "Refresh page", exact: true }).click();
+  await expect(
+    relatedRow.getByRole("button", { name: /Delete record/ }),
+  ).toBeVisible();
+  page.once("dialog", (dialog) => dialog.dismiss());
+  await relatedRow.getByRole("button", { name: /Delete record/ }).click();
+  await expect(relatedRow).toBeVisible();
+  expect((await totals()).order_count).toBe(2);
+  page.once("dialog", (dialog) => dialog.accept());
+  await relatedRow.getByRole("button", { name: /Delete record/ }).click();
+  await expect(relatedRow).toHaveCount(0);
+  await expect(page.getByRole("tabpanel").locator(".pagination")).toContainText(
+    "1 records",
   );
   await page.goto(bookmark);
   await expect(
