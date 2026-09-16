@@ -421,6 +421,45 @@ public partial class ApiTests
             );
             cmd.CommandText = $"SELECT COUNT(*) FROM `{child}`";
             Assert.Equal(2L, await cmd.ExecuteScalarAsync());
+            // Editable parent copies are not locked in related creation and preserve overrides.
+            fields.Insert(
+                0,
+                field with
+                {
+                    Lookup = field.Lookup! with
+                    {
+                        KeyColumn = "id",
+                        CopyMappings =
+                        [
+                            new("name", "copied_name", true),
+                            new("price", "copied_price"),
+                        ],
+                    },
+                }
+            );
+            (await admin.PutAsJsonAsync(layoutPath, fields)).EnsureSuccessStatusCode();
+            var editablePreview = await Preview(key);
+            Assert.DoesNotContain(
+                editablePreview.GetProperty("lockedFields").EnumerateArray(),
+                x => x.GetString() == "copied_name"
+            );
+            Assert.Contains(
+                editablePreview.GetProperty("lockedFields").EnumerateArray(),
+                x => x.GetString() == "parent_id"
+            );
+            var editableValues = Values("Editable parent copy");
+            editableValues["copied_name"] = JsonSerializer.SerializeToElement(
+                "Override from related form"
+            );
+            (
+                await admin.PostAsJsonAsync(
+                    root + "/create",
+                    new RelatedCreateInput(key, editableValues)
+                )
+            ).EnsureSuccessStatusCode();
+            cmd.CommandText =
+                $"SELECT copied_name FROM `{child}` WHERE title='Editable parent copy'";
+            Assert.Equal("Override from related form", await cmd.ExecuteScalarAsync());
             (await admin.DeleteAsync($"/api/admin/pages/{page.Id}")).EnsureSuccessStatusCode();
         }
         finally

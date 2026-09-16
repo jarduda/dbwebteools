@@ -153,9 +153,10 @@ export function LookupConfiguration({
       <fieldset>
         <legend>Copy values to this table</legend>
         <p>
-          Choosing a record copies these values. Saving re-reads them from the
-          lookup table. Clearing the lookup copies NULL. Other edits keep the
-          stored copy unchanged.
+          Choosing or reselecting a record fills these values again. Allow
+          editing to let users change a copy before saving or after reopening.
+          Unchecked copies stay locked and are verified by the backend. Clearing
+          the lookup copies NULL.
         </p>
         {(current.copyMappings || []).map((m, i) => (
           <div className="dropdown-option" key={i}>
@@ -206,6 +207,22 @@ export function LookupConfiguration({
                     <option key={c.name}>{c.name}</option>
                   ))}
               </select>
+            </label>
+            <label className="check">
+              <input
+                type="checkbox"
+                aria-label={`${name} copy ${i + 1} allow editing`}
+                checked={m.editable ?? false}
+                onChange={(e) =>
+                  change({
+                    ...current,
+                    copyMappings: current.copyMappings!.map((x, j) =>
+                      j === i ? { ...x, editable: e.target.checked } : x,
+                    ),
+                  })
+                }
+              />
+              Allow editing
             </label>
             <button
               type="button"

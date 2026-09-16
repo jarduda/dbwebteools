@@ -56,3 +56,20 @@ it("shows numeric NULL as blank but preserves zero and text NULL", () => {
     recordText({ values: { text: null }, version: "v" }, column("text")),
   ).toBe("NULL");
 });
+
+it("encodes the full drill-down path and rejects malformed bookmarks", () => {
+  const parent = { id: 3, key: JSON.stringify({ id: "9007199254740993" }) };
+  const row = { values: { id: "second/#? Łódź" }, version: "v" };
+  const link = pageHref(4, row, [column("id", true)], [parent]);
+  const route = parsePageRoute(link)!;
+  expect(route.trail).toEqual([parent]);
+  expect(route.id).toBe(4);
+  expect(JSON.parse(route.key)).toEqual(row.values);
+  for (const bad of [
+    "#page/1/null",
+    "#page/1/[]",
+    "#page/0/{}",
+    "#page/1/{}/bad",
+  ])
+    expect(parsePageRoute(bad)).toBeNull();
+});

@@ -355,10 +355,51 @@ test("define pages and drill through related tabs with record keys and browser h
   expect(
     (await panel.getByLabel("Search Orders", { exact: true }).boundingBox())!.x,
   ).toBeLessThan(relatedAddSize!.x);
-  await panel.getByLabel("Search Orders", { exact: true }).fill("Bob");
+  // Preserve the list, search focus and scroll position during delayed/in-flight searches.
+  await page.setViewportSize({ width: 390, height: 844 });
+  const search = panel.getByLabel("Search Orders", { exact: true });
+  await search.scrollIntoViewIfNeeded();
+  await search.focus();
+  const searchY = (await search.boundingBox())!.y;
+  await page.route("**/api/pages/*/tabs/*/records?*", async (route) => {
+    await new Promise((resolve) =>
+      setTimeout(
+        resolve,
+        new URL(route.request().url()).searchParams.get("search") === "A"
+          ? 700
+          : 300,
+      ),
+    );
+    await route.continue();
+  });
+  await search.pressSequentially("Alice", { delay: 180 });
+  await expect(search).toBeFocused();
+  await expect(panel.locator(".table-scroll")).toHaveAttribute(
+    "aria-busy",
+    "false",
+  );
+  await expect(
+    panel.getByRole("link", { name: "Alice order", exact: true }),
+  ).toBeVisible();
+  expect(Math.abs((await search.boundingBox())!.y - searchY)).toBeLessThan(3);
+  const filtered = page.waitForResponse(
+    (r) =>
+      r.url().includes("/tabs/") &&
+      new URL(r.url()).searchParams.get("search") === "Bob",
+  );
+  await search.fill("Bob");
+  expect((await (await filtered).json()).data.total).toBe(0);
   await expect(
     panel.getByText("No related records found.", { exact: true }),
   ).toBeVisible();
+  await expect(search).toBeFocused();
+  expect(Math.abs((await search.boundingBox())!.y - searchY)).toBeLessThan(3);
+  await search.fill("");
+  await expect(
+    panel.getByRole("link", { name: "Alice order", exact: true }),
+  ).toBeVisible();
+  await page.unroute("**/api/pages/*/tabs/*/records?*");
+  await page.setViewportSize({ width: 1280, height: 720 });
   await page.getByRole("tab", { name: "Amounts", exact: true }).click();
   await expect(page.getByRole("tabpanel").getByRole("columnheader")).toHaveText(
     ["amount", "Actions"],
@@ -384,11 +425,37 @@ test("define pages and drill through related tabs with record keys and browser h
     page.getByRole("heading", { name: "Line page", exact: true }),
   ).toBeVisible();
   expect(decodeURIComponent(page.url())).toContain('"seq":2');
+  const crumbs = page.getByRole("navigation", { name: "Page navigation" });
+  await expect(crumbs.getByRole("link")).toHaveText([
+    "Data browser",
+    "Customer page: Page Alice",
+    "Order page: Alice order",
+  ]);
+  await expect(crumbs.locator('[aria-current="page"]')).toHaveText(
+    "Line page: Alice second line",
+  );
   const bookmark = page.url();
   await page.reload();
   await expect(page.getByRole("region", { name: "Main record" })).toContainText(
     "Alice second line",
   );
+  await expect(crumbs.getByRole("link")).toHaveCount(3);
+  const shared = await page.context().newPage();
+  await shared.goto(bookmark);
+  await expect(
+    shared.getByRole("region", { name: "Main record" }),
+  ).toContainText("Alice second line");
+  const sharedCrumbs = shared.getByRole("navigation", {
+    name: "Page navigation",
+  });
+  await sharedCrumbs
+    .getByRole("link", { name: "Customer page: Page Alice", exact: true })
+    .click();
+  await expect(
+    shared.getByRole("heading", { name: "Customer page", exact: true }),
+  ).toBeVisible();
+  await expect(sharedCrumbs.getByRole("link")).toHaveText(["Data browser"]);
+  await shared.close();
   await page.goBack();
   await expect(
     page.getByRole("heading", { name: "Order page", exact: true }),

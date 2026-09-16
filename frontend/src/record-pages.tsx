@@ -1,4 +1,10 @@
-import { useEffect, useState, type ComponentType } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ComponentType,
+} from "react";
 import {
   api,
   type Column,
@@ -20,18 +26,40 @@ export function recordKey(row: Row, columns: Column[]) {
       .map((c) => [c.name, row.values[c.name]]),
   );
 }
-export function pageHref(pageId: number, row: Row, columns: Column[]) {
-  return `#page/${pageId}/${encodeURIComponent(JSON.stringify(recordKey(row, columns)))}`;
+export type RecordRoute = { id: number; key: string };
+export type PageRoute = RecordRoute & { trail: RecordRoute[] };
+export function routeHref(path: RecordRoute[]) {
+  return (
+    "#" + path.map((r) => `page/${r.id}/${encodeURIComponent(r.key)}`).join("/")
+  );
 }
-export function parsePageRoute(
-  hash: string,
-): { id: number; key: string } | null {
-  const match = /^#page\/(\d+)\/(.+)$/.exec(hash);
-  if (!match) return null;
+export function pageHref(
+  pageId: number,
+  row: Row,
+  columns: Column[],
+  trail: RecordRoute[] = [],
+) {
+  return routeHref([
+    ...trail,
+    { id: pageId, key: JSON.stringify(recordKey(row, columns)) },
+  ]);
+}
+export function parsePageRoute(hash: string): PageRoute | null {
+  if (!hash.startsWith("#page/")) return null;
+  const parts = hash.slice(1).split("/");
+  if (parts.length % 3 || parts.length > 150) return null;
   try {
-    const key = decodeURIComponent(match[2]);
-    JSON.parse(key);
-    return { id: Number(match[1]), key };
+    const path: RecordRoute[] = [];
+    for (let i = 0; i < parts.length; i += 3) {
+      if (parts[i] !== "page" || !/^[1-9][0-9]*$/.test(parts[i + 1]))
+        return null;
+      const key = decodeURIComponent(parts[i + 2]);
+      const parsed = JSON.parse(key);
+      if (!parsed || Array.isArray(parsed) || typeof parsed !== "object")
+        return null;
+      path.push({ id: Number(parts[i + 1]), key });
+    }
+    return { ...path[path.length - 1], trail: path.slice(0, -1) };
   } catch {
     return null;
   }
@@ -101,7 +129,7 @@ export function RecordPageView({
   route,
   editor: Editor,
 }: {
-  route: { id: number; key: string };
+  route: PageRoute;
   editor: ComponentType<EditorProps>;
 }) {
   const [data, setData] = useState<Details | null>(null),
@@ -133,6 +161,39 @@ export function RecordPageView({
       active = false;
     };
   }, [route.id, route.key, revision]);
+  const [ancestors, setAncestors] = useState<string[]>([]);
+  const trailJson = JSON.stringify(route.trail);
+  useEffect(() => {
+    let active = true;
+    setAncestors([]);
+    const trail: RecordRoute[] = JSON.parse(trailJson);
+    Promise.all(
+      trail.map(async (r) => {
+        try {
+          const d = await api<Details>(
+            `/pages/${r.id}/record?key=${encodeURIComponent(r.key)}`,
+          );
+          const column = d.columns.find((c) => c.name === d.page.linkColumn);
+          const label = column
+            ? recordText(
+                d.record,
+                column,
+                d.fields.find((f) => f.name === column.name),
+              )
+            : "";
+          return label ? `${d.page.name}: ${label}` : d.page.name;
+        } catch {
+          return "Unavailable record";
+        }
+      }),
+    ).then((labels) => {
+      if (active) setAncestors(labels);
+    });
+    return () => {
+      active = false;
+    };
+  }, [trailJson]);
+  const path = [...route.trail, { id: route.id, key: route.key }];
   const activeTab = data?.page.tabs.find((t) => t.id === tabId);
   const titleColumn = data?.columns.find(
     (c) => c.name === data.page.linkColumn,
@@ -141,8 +202,25 @@ export function RecordPageView({
     <div className="record-page">
       <nav className="breadcrumbs" aria-label="Page navigation">
         <a href="#records">Data browser</a>
-        <span>/</span>
-        <span>{data?.page.name || "Record page"}</span>
+        {route.trail.map((r, i) => (
+          <span className="breadcrumb-item" key={`${i}/${r.id}`}>
+            <span aria-hidden="true">/</span>
+            <a href={routeHref(path.slice(0, i + 1))}>
+              {ancestors[i] || "Record page"}
+            </a>
+          </span>
+        ))}
+        <span aria-hidden="true">/</span>
+        <span aria-current="page">
+          {data?.page.name || "Record page"}
+          {data && titleColumn
+            ? `: ${recordText(
+                data.record,
+                titleColumn,
+                data.fields.find((f) => f.name === titleColumn.name),
+              )}`
+            : ""}
+        </span>
         <button type="button" onClick={() => history.back()}>
           Back
         </button>
@@ -268,6 +346,7 @@ export function RecordPageView({
                     pageId={route.id}
                     parentKey={route.key}
                     tab={activeTab}
+                    trail={path}
                   />
                 </div>
               )}
@@ -331,12 +410,14 @@ function RelatedRecords({
   pageId,
   parentKey,
   tab,
+  trail,
 }: {
   onCreated: () => void;
   editor: ComponentType<EditorProps>;
   pageId: number;
   parentKey: string;
   tab: RelatedTab;
+  trail: RecordRoute[];
 }) {
   const [data, setData] = useState<RelatedData | null>(null),
     [error, setError] = useState(""),
@@ -354,7 +435,6 @@ function RelatedRecords({
     let active = true;
     setBusy(true);
     setError("");
-    setData(null);
     const timer = setTimeout(() => {
       const query = new URLSearchParams({
         key: parentKey,
@@ -379,6 +459,14 @@ function RelatedRecords({
       clearTimeout(timer);
     };
   }, [pageId, parentKey, tab.id, page, search, sort, desc, revision]);
+  const listRef = useRef<HTMLDivElement>(null);
+  const [listHeight, setListHeight] = useState(0);
+  useLayoutEffect(() => {
+    if (listRef.current && data)
+      setListHeight((old) =>
+        Math.max(old, listRef.current!.getBoundingClientRect().height),
+      );
+  }, [data]);
   const allColumns = data
     ? [...data.data.columns, ...(data.data.joinedColumns || [])]
     : [];
@@ -499,93 +587,98 @@ function RelatedRecords({
           {error}
         </div>
       )}
-      <div className="table-scroll" aria-busy={busy}>
-        {busy ? (
-          <p role="status">Loading related records…</p>
-        ) : (
-          data && (
-            <table>
-              <thead>
-                <tr>
-                  {columns.map((c) => (
-                    <th
-                      key={c.name}
-                      aria-sort={
-                        data.data.sort === c.name
-                          ? data.data.descending
-                            ? "descending"
-                            : "ascending"
-                          : "none"
+      <div className="related-loading" role="status">
+        {busy ? "Loading related records…" : ""}
+      </div>
+      <div
+        ref={listRef}
+        className="table-scroll"
+        aria-busy={busy}
+        style={{ minHeight: listHeight || undefined }}
+      >
+        {data && (
+          <table>
+            <thead>
+              <tr>
+                {columns.map((c) => (
+                  <th
+                    key={c.name}
+                    aria-sort={
+                      data.data.sort === c.name
+                        ? data.data.descending
+                          ? "descending"
+                          : "ascending"
+                        : "none"
+                    }
+                  >
+                    <button
+                      disabled={
+                        !data.data.columns.some((x) => x.name === c.name)
                       }
+                      onClick={() => {
+                        setSort(c.name);
+                        setDesc(
+                          data.data.sort === c.name
+                            ? !data.data.descending
+                            : false,
+                        );
+                        setPage(1);
+                      }}
                     >
-                      <button
-                        disabled={
-                          !data.data.columns.some((x) => x.name === c.name)
-                        }
-                        onClick={() => {
-                          setSort(c.name);
-                          setDesc(
-                            data.data.sort === c.name
-                              ? !data.data.descending
-                              : false,
-                          );
-                          setPage(1);
-                        }}
-                      >
-                        {data.fields.find((f) => f.name === c.name)?.label ||
-                          c.name}
-                      </button>
-                    </th>
-                  ))}
-                  {data.canUpdate && <th>Actions</th>}
-                </tr>
-              </thead>
-              <tbody>
-                {data.data.rows.map((row, i) => (
-                  <tr key={i}>
-                    {columns.map((c) => (
-                      <td key={c.name}>
-                        {data.targetPageId && data.linkColumn === c.name ? (
-                          <a
-                            className="record-link"
-                            href={pageHref(
-                              data.targetPageId,
-                              row,
-                              data.data.columns,
-                            )}
-                          >
-                            {recordText(
-                              row,
-                              c,
-                              data.fields.find((f) => f.name === c.name),
-                            )}
-                          </a>
-                        ) : (
-                          recordText(
+                      {data.fields.find((f) => f.name === c.name)?.label ||
+                        c.name}
+                    </button>
+                  </th>
+                ))}
+                {data.canUpdate && <th>Actions</th>}
+              </tr>
+            </thead>
+            <tbody>
+              {data.data.rows.map((row, i) => (
+                <tr key={i}>
+                  {columns.map((c) => (
+                    <td key={c.name}>
+                      {data.targetPageId && data.linkColumn === c.name ? (
+                        <a
+                          className="record-link"
+                          href={pageHref(
+                            data.targetPageId,
+                            row,
+                            data.data.columns,
+                            trail,
+                          )}
+                        >
+                          {recordText(
                             row,
                             c,
                             data.fields.find((f) => f.name === c.name),
-                          )
-                        )}
-                      </td>
-                    ))}
-                    {data.canUpdate && (
-                      <td>
-                        <button
-                          type="button"
-                          className="icon-button"
-                          aria-label={`Edit record ${i + 1}`}
-                          onClick={() => setEditing(row)}
-                        >
-                          <Pencil size={16} />
-                        </button>
-                      </td>
-                    )}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )
+                          )}
+                        </a>
+                      ) : (
+                        recordText(
+                          row,
+                          c,
+                          data.fields.find((f) => f.name === c.name),
+                        )
+                      )}
+                    </td>
+                  ))}
+                  {data.canUpdate && (
+                    <td>
+                      <button
+                        type="button"
+                        className="icon-button"
+                        aria-label={`Edit record ${i + 1}`}
+                        onClick={() => setEditing(row)}
+                      >
+                        <Pencil size={16} />
+                      </button>
+                    </td>
+                  )}
+                </tr>
+              ))}
+            </tbody>
+          </table>
         )}
         {!busy && data?.data.total === 0 && (
           <p className="notice">No related records found.</p>

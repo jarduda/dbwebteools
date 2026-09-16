@@ -149,7 +149,11 @@ public record LookupConfig(
     ListView? Criteria = null
 );
 
-public record LookupCopyMapping(string SourceColumn, string DestinationColumn);
+public record LookupCopyMapping(
+    string SourceColumn,
+    string DestinationColumn,
+    bool Editable = false
+);
 
 public record LookupCopyInput(System.Text.Json.JsonElement Key);
 

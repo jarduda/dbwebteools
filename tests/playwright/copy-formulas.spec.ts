@@ -65,6 +65,9 @@ test("configure lookup copies and backend formula fields, create and replace rel
   await page
     .getByLabel("product_id copy 2 destination")
     .selectOption("unit_price");
+  await page
+    .getByLabel("product_id copy 1 allow editing", { exact: true })
+    .check();
   const criteria = page.getByRole("region", {
     name: "product_id lookup criteria",
     exact: true,
@@ -112,6 +115,12 @@ test("configure lookup copies and backend formula fields, create and replace rel
   await expect(page.getByLabel("formula_1 expression")).toHaveValue(
     "Round([unit_price] * [quantity], 2)",
   );
+  await expect(
+    page.getByLabel("product_id copy 1 allow editing", { exact: true }),
+  ).toBeChecked();
+  await expect(
+    page.getByLabel("product_id copy 2 allow editing", { exact: true }),
+  ).not.toBeChecked();
   await expect(page.getByLabel("product_id copy 2 destination")).toHaveValue(
     "unit_price",
   );
@@ -222,6 +231,44 @@ test("configure lookup copies and backend formula fields, create and replace rel
   await expect(editor.getByLabel("description", { exact: true })).toHaveValue(
     "Copy Bob",
   );
+  await expect(editor.getByLabel("description", { exact: true })).toBeEnabled();
+  await expect(editor.getByLabel("unit_price", { exact: true })).toBeDisabled();
+  await editor.getByLabel("description", { exact: true }).fill("Custom Bob");
+  await editor
+    .getByRole("button", { name: "Save record", exact: true })
+    .click();
+  await expect(editor).toHaveCount(0);
+  row = page
+    .getByRole("row")
+    .filter({
+      has: page.getByRole("cell", { name: "CUSTOM BOB x3", exact: true }),
+    })
+    .last();
+  await row.getByRole("button", { name: /Edit record/ }).click();
+  await expect(editor.getByLabel("description", { exact: true })).toHaveValue(
+    "Custom Bob",
+  );
+  await editor
+    .getByRole("button", { name: "Choose product_id", exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: "Select Copy Bob (42)", exact: true })
+    .click();
+  await expect(editor.getByLabel("description", { exact: true })).toHaveValue(
+    "Copy Bob",
+  );
+  await expect(editor.getByLabel("description", { exact: true })).toBeEnabled();
+  // Override back to the old stored value after same-key reselection: payload must retain it.
+  await editor.getByLabel("description", { exact: true }).fill("Custom Bob");
+  await editor
+    .getByRole("button", { name: "Save record", exact: true })
+    .click();
+  await expect(editor).toHaveCount(0);
+  await row.getByRole("button", { name: /Edit record/ }).click();
+  await expect(editor.getByLabel("description", { exact: true })).toHaveValue(
+    "Custom Bob",
+  );
+  await expect(editor.getByLabel("unit_price", { exact: true })).toBeDisabled();
   await editor
     .getByRole("button", { name: "Clear product_id", exact: true })
     .click();

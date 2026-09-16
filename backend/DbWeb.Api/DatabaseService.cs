@@ -368,11 +368,24 @@ public partial class DatabaseService(IDataProtectionProvider protection)
             foreach (
                 var field in (fields ?? []).Where(f => f.Widget == "lookup" && f.Lookup != null)
             )
+            {
+                var mappings = field.Lookup!.CopyMappings ?? [];
                 if (input.Values.TryGetValue(field.Name, out var selectedKey))
+                {
                     foreach (
-                        var copied in await CopyLookupValues(db, field.Lookup!, selectedKey, tx)
+                        var copied in await CopyLookupValues(db, field.Lookup, selectedKey, tx)
                     )
-                        input.Values[copied.Key] = copied.Value;
+                        if (
+                            !mappings.Single(m => m.DestinationColumn == copied.Key).Editable
+                            || !input.Values.ContainsKey(copied.Key)
+                        )
+                            input.Values[copied.Key] = copied.Value;
+                }
+                else if (
+                    mappings.Any(m => !m.Editable && input.Values.ContainsKey(m.DestinationColumn))
+                )
+                    throw new ApiError(400, "This copied field is locked by its lookup mapping.");
+            }
             LayoutRules.ValidateDropdownValues(fields ?? [], input.Values);
             LayoutRules.ValidateRequiredValues(fields ?? [], input.Values, current);
         }
