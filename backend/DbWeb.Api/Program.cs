@@ -9,6 +9,8 @@ using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using MySqlConnector;
+using static DbWeb.Api.RecordPresentation;
+using static DbWeb.Api.TableAccess;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddDbContext<AppDb>(
@@ -101,6 +103,7 @@ using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<AppDb>();
     db.Database.EnsureCreated();
+    PageSchema.EnsureCreated(db);
     if (!db.Users.Any())
     {
         var password = builder.Configuration["Bootstrap:Password"];
@@ -327,6 +330,7 @@ admin.MapDelete(
     {
         await db.Grants.Where(x => x.ConnectionId == id).ExecuteDeleteAsync();
         await db.Layouts.Where(x => x.ConnectionId == id).ExecuteDeleteAsync();
+        await db.Pages.Where(x => x.ConnectionId == id).ExecuteDeleteAsync();
         await db.Connections.Where(x => x.Id == id).ExecuteDeleteAsync();
         return Results.NoContent();
     }
@@ -453,48 +457,7 @@ api.MapGet(
             definition.View,
             definition.Fields
         );
-        foreach (
-            var field in DatabaseService
-                .LayoutFields(layout?.FieldsJson)
-                .Where(f => f.Widget == "lookup" && f.Lookup != null)
-        )
-        {
-            try
-            {
-                await Access(db, ctx, id, field.Lookup!.Table, "read");
-            }
-            catch (ApiError e) when (e.Status == 403)
-            {
-                continue;
-            }
-            var labels = await s.LookupLabels(
-                c,
-                field.Lookup!,
-                result.Rows.Select(r => r.Values.GetValueOrDefault(field.Name))
-            );
-            foreach (var row in result.Rows)
-                if (
-                    row.Values.GetValueOrDefault(field.Name) is { } key
-                    && labels.TryGetValue(DatabaseService.KeyText(key), out var label)
-                )
-                    row.DisplayValues[field.Name] = label;
-        }
-        LayoutRules.AddDropdownLabels(
-            DatabaseService.LayoutFields(layout?.FieldsJson),
-            result.Rows
-        );
-        result.JoinedColumns.AddRange(
-            await PopulateJoins(
-                db,
-                ctx,
-                id,
-                c,
-                s,
-                DatabaseService.LayoutFields(layout?.FieldsJson),
-                result.Columns,
-                result.Rows
-            )
-        );
+        await Decorate(db, ctx, id, c, s, definition.Fields, result);
         return result;
     }
 );
@@ -839,58 +802,8 @@ foreach (var operation in new[] { "create", "update", "delete" })
         }
     );
 }
+PageEndpoints.Map(app);
 app.Run();
-static async Task<List<ColumnInfo>> PopulateJoins(
-    AppDb db,
-    HttpContext ctx,
-    int id,
-    MySqlConnection c,
-    DatabaseService service,
-    List<LayoutField> fields,
-    List<ColumnInfo> sourceColumns,
-    List<RecordRow> rows
-)
-{
-    var result = new List<ColumnInfo>();
-    foreach (var field in fields.Where(f => f.Widget == "join" && f.Join != null))
-    {
-        var join = field.Join!;
-        try
-        {
-            await Access(db, ctx, id, join.Table, "read");
-        }
-        catch (ApiError e) when (e.Status == 403)
-        {
-            result.Add(new(field.Name, "text", true, false, true, false, null));
-            continue;
-        }
-        var column = await service.ValidateJoin(c, join, sourceColumns);
-        result.Add(
-            column with
-            {
-                Name = field.Name,
-                Nullable = true,
-                PrimaryKey = false,
-                Generated = true,
-                AutoIncrement = false,
-                Default = null,
-            }
-        );
-        var joined = await service.JoinValues(
-            c,
-            join,
-            rows.Select(r => r.Values.GetValueOrDefault(join.SourceColumn))
-        );
-        foreach (var row in rows)
-            row.JoinedValues[field.Name] = row.Values.GetValueOrDefault(join.SourceColumn)
-                is { } key
-                ? joined.GetValueOrDefault(DatabaseService.KeyText(key))
-                : null;
-    }
-    result.AddRange(Formulas.Populate(fields, sourceColumns, rows));
-    return result;
-}
-
 static void ValidateUser(UserInput i, bool create)
 {
     if (string.IsNullOrWhiteSpace(i.Username) || i.Username.Length > 100)
@@ -915,37 +828,6 @@ static void SetConnection(DatabaseConnection c, ConnectionInput i, IDataProtecti
     c.VerifyTls = i.VerifyTls;
     if (i.Password != null)
         c.ProtectedPassword = p.CreateProtector("database-passwords").Protect(i.Password);
-}
-static async Task<DatabaseConnection> Access(
-    AppDb db,
-    HttpContext c,
-    int id,
-    string table,
-    string op
-)
-{
-    if (!c.User.IsInRole("Admin"))
-    {
-        var uid = int.Parse(c.User.FindFirstValue(ClaimTypes.NameIdentifier)!);
-        var g = await db.Grants.SingleOrDefaultAsync(x =>
-            x.UserId == uid && x.ConnectionId == id && x.Table == table
-        );
-        if (
-            g == null
-            || !g.Read
-            || !(
-                op switch
-                {
-                    "create" => g.Create,
-                    "update" => g.Update,
-                    "delete" => g.Delete,
-                    _ => g.Read,
-                }
-            )
-        )
-            throw new ApiError(403, "You do not have permission for this operation.");
-    }
-    return await db.Connections.FindAsync(id) ?? throw new ApiError(404, "Connection not found.");
 }
 
 public partial class Program { }

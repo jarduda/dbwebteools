@@ -29,6 +29,7 @@ import {
   type Field,
   type Grant,
   type ListView,
+  type PageSummary,
 } from "./api";
 import "./style.css";
 import { JoinConfiguration, listColumns } from "./layout-fields";
@@ -41,6 +42,8 @@ import {
   cellText,
 } from "./field-controls";
 import { LookupConfiguration, LookupInput } from "./lookups";
+import { PageEditor } from "./page-editor";
+import { PageCell, RecordPageView, parsePageRoute } from "./record-pages";
 function App() {
   const [user, setUser] = useState<User | null>(null),
     [ready, setReady] = useState(false),
@@ -50,6 +53,25 @@ function App() {
     [tables, setTables] = useState<string[]>([]),
     [table, setTable] = useState(""),
     [error, setError] = useState("");
+  const [hash, setHash] = useState(window.location.hash);
+  const pageRoute = parsePageRoute(hash);
+  useEffect(() => {
+    const change = () => {
+      setHash(window.location.hash);
+      if (
+        window.location.hash.startsWith("#page/") ||
+        window.location.hash === "#records"
+      )
+        setView("records");
+    };
+    window.addEventListener("hashchange", change);
+    return () => window.removeEventListener("hashchange", change);
+  }, []);
+  const navigate = (next: string) => {
+    setView(next);
+    if (window.location.hash)
+      window.location.hash = next === "records" ? "records" : "";
+  };
   const fail = (e: unknown) =>
     setError(e instanceof Error ? e.message : String(e));
   const loadConnections = () =>
@@ -110,7 +132,7 @@ function App() {
         <div className="workspace-label">WORKSPACE</div>
         <button
           className={"nav " + (view === "records" ? "active" : "")}
-          onClick={() => setView("records")}
+          onClick={() => navigate("records")}
         >
           <Table2 size={18} />
           Data browser
@@ -123,12 +145,13 @@ function App() {
               ["connections", "Connections", Database],
               ["permissions", "Table access", ShieldCheck],
               ["layouts", "Editor layouts", Settings2],
+              ["pages", "Page editor", Table2],
               ["audit", "Activity log", Activity],
             ].map(([key, label, Icon]) => (
               <button
                 key={String(key)}
                 className={"nav " + (view === key ? "active" : "")}
-                onClick={() => setView(String(key))}
+                onClick={() => navigate(String(key))}
               >
                 {React.createElement(Icon, { size: 18 })}
                 {String(label)}
@@ -179,7 +202,15 @@ function App() {
               </button>
             </div>
           )}
-          {view === "records" ? (
+          {view === "records" && pageRoute ? (
+            <RecordPageView
+              key={hash}
+              route={pageRoute}
+              editor={RecordEditor}
+            />
+          ) : view === "pages" && user.isAdmin ? (
+            <PageEditor connections={connections} />
+          ) : view === "records" ? (
             <>
               <div className="heading">
                 <div className="eyebrow">YOUR DATA, CLEARLY ORGANIZED</div>
@@ -357,6 +388,21 @@ function Records({
     [editing, setEditing] = useState<Row | null | undefined>(undefined),
     [deleting, setDeleting] = useState<Row | null>(null),
     [busy, setBusy] = useState(false);
+  const [recordPages, setRecordPages] = useState<PageSummary[]>([]);
+  useEffect(() => {
+    let active = true;
+    api<PageSummary[]>("/pages")
+      .then((p) => {
+        if (active)
+          setRecordPages(
+            p.filter((x) => x.connectionId === connection && x.table === table),
+          );
+      })
+      .catch(fail);
+    return () => {
+      active = false;
+    };
+  }, [connection, table]);
   const base = `/connections/${connection}/tables/${encodeURIComponent(table)}`;
   const load = () => {
     setBusy(true);
@@ -503,31 +549,13 @@ function Records({
                 <tr key={i}>
                   {displayColumns.map((c) => (
                     <td key={c.name}>
-                      {joined(c.name) ? (
-                        r.calculationErrors?.[c.name] ? (
-                          <span
-                            className="lookup-error"
-                            title={r.calculationErrors[c.name]}
-                          >
-                            Calculation error
-                          </span>
-                        ) : !(c.name in (r.joinedValues || {})) ? (
-                          <span className="null">Unavailable</span>
-                        ) : r.joinedValues?.[c.name] == null ? (
-                          <span className="null">NULL</span>
-                        ) : (
-                          cellText(r.joinedValues[c.name], c)
-                        )
-                      ) : r.values[c.name] == null ? (
-                        <span className="null">NULL</span>
-                      ) : (
-                        (r.displayValues?.[c.name] ??
-                        cellText(
-                          r.values[c.name],
-                          c,
-                          settings?.fields.find((f) => f.name === c.name),
-                        ))
-                      )}
+                      <PageCell
+                        row={r}
+                        column={c}
+                        columns={data.columns}
+                        fields={settings?.fields || []}
+                        pages={recordPages}
+                      />
                     </td>
                   ))}
                   <td>
