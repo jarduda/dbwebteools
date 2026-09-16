@@ -346,7 +346,7 @@ public partial class ApiTests
             Assert.Empty(
                 (await member.GetFromJsonAsync<JsonElement>("/api/pages")).EnumerateArray()
             );
-            async Task Grant(string table, bool read) =>
+            async Task Grant(string table, bool read, bool delete = false) =>
                 (
                     await admin.PutAsJsonAsync(
                         "/api/admin/grants",
@@ -356,6 +356,7 @@ public partial class ApiTests
                             ConnectionId = connection,
                             Table = table,
                             Read = read,
+                            Delete = delete,
                         }
                     )
                 ).EnsureSuccessStatusCode();
@@ -367,7 +368,41 @@ public partial class ApiTests
             await Grant(children, true);
             tab = await member.GetFromJsonAsync<JsonElement>(related);
             Assert.Equal(30, tab.GetProperty("data").GetProperty("total").GetInt32());
+            Assert.False(tab.GetProperty("canDelete").GetBoolean());
+            var deleteUrl = $"/api/pages/{parentPage.Id}/tabs/{ordersTab.Id}/delete";
+            async Task<HttpResponseMessage> Delete(HttpClient client, int child, string version) =>
+                await client.PostAsJsonAsync(
+                    deleteUrl,
+                    new
+                    {
+                        parentKey = Uri.UnescapeDataString(parentKey),
+                        mutation = new
+                        {
+                            values = new { },
+                            key = new { id = child },
+                            version,
+                        },
+                    }
+                );
+            Assert.Equal(HttpStatusCode.Forbidden, (await Delete(member, 5, "stale")).StatusCode);
+            await Grant(children, true, true);
+            tab = await member.GetFromJsonAsync<JsonElement>(related);
+            Assert.True(tab.GetProperty("canDelete").GetBoolean());
+            var victim = tab.GetProperty("data")
+                .GetProperty("rows")
+                .EnumerateArray()
+                .Single(r => r.GetProperty("values").GetProperty("id").GetInt32() == 5);
+            Assert.Equal(HttpStatusCode.NotFound, (await Delete(member, 2, "stale")).StatusCode);
+            Assert.Equal(HttpStatusCode.Conflict, (await Delete(member, 5, "stale")).StatusCode);
+            (
+                await Delete(member, 5, victim.GetProperty("version").GetString()!)
+            ).EnsureSuccessStatusCode();
+            tab = await member.GetFromJsonAsync<JsonElement>(related);
+            Assert.Equal(29, tab.GetProperty("data").GetProperty("total").GetInt32());
+            await Grant(children, true);
+            Assert.Equal(HttpStatusCode.Forbidden, (await Delete(member, 6, "stale")).StatusCode);
             await Grant(parents, false);
+            Assert.Equal(HttpStatusCode.Forbidden, (await Delete(member, 6, "stale")).StatusCode);
             Assert.Equal(HttpStatusCode.Forbidden, (await member.GetAsync(related)).StatusCode); // Child permission alone cannot bypass parent access.
             (
                 await admin.DeleteAsync($"/api/admin/pages/{parentPage.Id}")

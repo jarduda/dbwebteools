@@ -16,7 +16,7 @@ import {
   type PageSummary,
   type RelatedTab,
 } from "./api";
-import { Plus, Pencil, Search } from "lucide-react";
+import { Plus, Pencil, Search, Trash2 } from "lucide-react";
 import { cellText } from "./field-controls";
 
 export function recordKey(row: Row, columns: Column[]) {
@@ -387,6 +387,7 @@ export function RecordPageView({
 }
 
 type RelatedData = {
+  canDelete: boolean;
   connectionId: number;
   canUpdate: boolean;
   lockedFields: string[];
@@ -430,6 +431,7 @@ function RelatedRecords({
     [revision, setRevision] = useState(0),
     [editing, setEditing] = useState<Row | null>(null),
     [creating, setCreating] = useState(false),
+    [deleting, setDeleting] = useState(false),
     [preview, setPreview] = useState<CreatePreview | null>(null),
     [notice, setNotice] = useState("");
   useEffect(() => {
@@ -631,7 +633,7 @@ function RelatedRecords({
                     </button>
                   </th>
                 ))}
-                {data.canUpdate && <th>Actions</th>}
+                {(data.canUpdate || data.canDelete) && <th>Actions</th>}
               </tr>
             </thead>
             <tbody>
@@ -664,16 +666,58 @@ function RelatedRecords({
                       )}
                     </td>
                   ))}
-                  {data.canUpdate && (
+                  {(data.canUpdate || data.canDelete) && (
                     <td>
-                      <button
-                        type="button"
-                        className="icon-button"
-                        aria-label={`Edit record ${i + 1}`}
-                        onClick={() => setEditing(row)}
-                      >
-                        <Pencil size={16} />
-                      </button>
+                      {data.canUpdate && (
+                        <button
+                          type="button"
+                          className="icon-button"
+                          aria-label={`Edit record ${i + 1}`}
+                          disabled={deleting}
+                          onClick={() => setEditing(row)}
+                        >
+                          <Pencil size={16} />
+                        </button>
+                      )}
+                      {data.canDelete && (
+                        <button
+                          type="button"
+                          className="icon-button danger"
+                          aria-label={`Delete record ${i + 1}`}
+                          disabled={busy || deleting}
+                          onClick={async () => {
+                            if (
+                              !window.confirm(
+                                "Delete this record permanently? This action cannot be undone.",
+                              )
+                            )
+                              return;
+                            setDeleting(true);
+                            setError("");
+                            try {
+                              await api(
+                                `/pages/${pageId}/tabs/${tab.id}/delete`,
+                                "POST",
+                                {
+                                  parentKey,
+                                  mutation: {
+                                    values: {},
+                                    key: recordKey(row, data.data.columns),
+                                    version: row.version,
+                                  },
+                                },
+                              );
+                              onCreated();
+                            } catch (e) {
+                              setError((e as Error).message);
+                            } finally {
+                              setDeleting(false);
+                            }
+                          }}
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      )}
                     </td>
                   )}
                 </tr>
