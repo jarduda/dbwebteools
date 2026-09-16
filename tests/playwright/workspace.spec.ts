@@ -44,6 +44,7 @@ test("desktop and mobile workspace with administration", async ({ page }) => {
 });
 
 test("browse, create, edit and delete MariaDB records", async ({ page }) => {
+  await page.clock.install();
   await page.goto("/");
   await page.getByLabel("Username", { exact: true }).fill("admin");
   await page

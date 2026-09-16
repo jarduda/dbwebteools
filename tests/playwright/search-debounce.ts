@@ -13,8 +13,9 @@ export async function expectDebouncedSearch(
   path: RegExp,
   text: string,
 ) {
-  await page.clock.install();
-  await page.clock.pauseAt(new Date());
+  await page.clock.pauseAt(
+    new Date((await page.evaluate(() => Date.now())) + 10_000),
+  );
   const searches: string[] = [];
   let settings = 0;
   const record = (r: Request) => {

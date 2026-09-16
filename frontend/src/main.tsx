@@ -454,6 +454,7 @@ function Records({
     };
   }, [base]);
   useEffect(() => {
+    if (search === query) return;
     const timer = setTimeout(() => {
       setQuery(search);
       setPage(1);

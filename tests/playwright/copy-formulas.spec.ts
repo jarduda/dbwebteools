@@ -7,6 +7,7 @@ test("configure lookup copies and backend formula fields, create and replace rel
   test.setTimeout(90_000);
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
+  await page.clock.install();
   await page.goto("/");
   await page.getByLabel("Username", { exact: true }).fill("admin");
   await page

@@ -7,6 +7,7 @@ test("define pages and drill through related tabs with record keys and browser h
   test.setTimeout(120_000);
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
+  await page.clock.install();
   await page.goto("/");
   await page.getByLabel("Username", { exact: true }).fill("admin");
   await page
