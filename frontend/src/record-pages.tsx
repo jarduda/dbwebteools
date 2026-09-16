@@ -79,6 +79,8 @@ export function PageCell({
 }
 
 type EditorProps = {
+  initialValues?: Record<string, unknown>;
+  lockedFields?: string[];
   base?: string;
   columns: Column[];
   fields: Field[];
@@ -259,6 +261,7 @@ export function RecordPageView({
                 >
                   <RelatedRecords
                     key={`${activeTab.id}/${revision}`}
+                    editor={Editor}
                     pageId={route.id}
                     parentKey={route.key}
                     tab={activeTab}
@@ -301,17 +304,28 @@ export function RecordPageView({
 }
 
 type RelatedData = {
+  canCreate: boolean;
   data: Page;
   fields: Field[];
   visibleColumns: string[];
   targetPageId?: number | null;
   linkColumn?: string | null;
 };
+type CreatePreview = {
+  connectionId: number;
+  table: string;
+  columns: Column[];
+  fields: Field[];
+  values: Record<string, unknown>;
+  lockedFields: string[];
+};
 function RelatedRecords({
+  editor: Editor,
   pageId,
   parentKey,
   tab,
 }: {
+  editor: ComponentType<EditorProps>;
   pageId: number;
   parentKey: string;
   tab: RelatedTab;
@@ -322,7 +336,11 @@ function RelatedRecords({
     [page, setPage] = useState(1),
     [search, setSearch] = useState(""),
     [sort, setSort] = useState(""),
-    [desc, setDesc] = useState(false);
+    [desc, setDesc] = useState(false),
+    [revision, setRevision] = useState(0),
+    [creating, setCreating] = useState(false),
+    [preview, setPreview] = useState<CreatePreview | null>(null),
+    [notice, setNotice] = useState("");
   useEffect(() => {
     let active = true;
     setBusy(true);
@@ -351,7 +369,7 @@ function RelatedRecords({
       active = false;
       clearTimeout(timer);
     };
-  }, [pageId, parentKey, tab.id, page, search, sort, desc]);
+  }, [pageId, parentKey, tab.id, page, search, sort, desc, revision]);
   const allColumns = data
     ? [...data.data.columns, ...(data.data.joinedColumns || [])]
     : [];
@@ -361,7 +379,63 @@ function RelatedRecords({
       .filter((c): c is Column => !!c) || [];
   return (
     <>
+      {notice && (
+        <p role="status" className="notice">
+          {notice}
+        </p>
+      )}
+      {preview && (
+        <Editor
+          base={`/connections/${preview.connectionId}/tables/${encodeURIComponent(preview.table)}`}
+          columns={preview.columns}
+          fields={preview.fields}
+          row={null}
+          initialValues={preview.values}
+          lockedFields={preview.lockedFields}
+          close={() => setPreview(null)}
+          save={async (values) => {
+            await api(`/pages/${pageId}/tabs/${tab.id}/create`, "POST", {
+              key: parentKey,
+              values,
+            });
+            setPreview(null);
+            setSearch("");
+            setPage(1);
+            setRevision((v) => v + 1);
+            setNotice(
+              "Record created. The list still applies its configured filters and sorting.",
+            );
+          }}
+        />
+      )}
       <div className="toolbar">
+        {data?.canCreate && (
+          <button
+            className="primary"
+            disabled={creating || busy}
+            onClick={async () => {
+              setCreating(true);
+              setError("");
+              setNotice("");
+              try {
+                setPreview(
+                  await api<CreatePreview>(
+                    `/pages/${pageId}/tabs/${tab.id}/create-preview`,
+                    "POST",
+                    { key: parentKey },
+                  ),
+                );
+              } catch (e) {
+                setError((e as Error).message);
+              } finally {
+                setCreating(false);
+              }
+            }}
+          >
+            {creating ? "Preparing…" : "Add related record"}
+          </button>
+        )}
+
         <label>
           Search {tab.label}
           <input

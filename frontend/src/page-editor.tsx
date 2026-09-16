@@ -247,9 +247,9 @@ export function PageEditor({ connections }: { connections: Connection[] }) {
           )}
           <h2>Related objects</h2>
           <p>
-            Each tab shows records where its related column equals the selected
-            parent column. Choose display columns in the order you want them
-            shown.
+            Each tab uses a lookup from the related table’s Editor layout
+            pointing to this main table. Choose display columns in the order you
+            want them shown.
           </p>
           {draft.tabs.map((tab, i) => (
             <RelatedTabEditor
@@ -258,7 +258,7 @@ export function PageEditor({ connections }: { connections: Connection[] }) {
               number={i + 1}
               connection={draft.connectionId}
               tables={tables}
-              parentColumns={columns}
+              parentTable={draft.table}
               pages={pages}
               change={(next) =>
                 update({
@@ -288,7 +288,8 @@ export function PageEditor({ connections }: { connections: Connection[] }) {
                     id: newTabId(),
                     label: `Related ${draft.tabs.length + 1}`,
                     table: "",
-                    parentColumn: columns.find((c) => c.primaryKey)?.name || "",
+                    parentColumn: "",
+                    lookupField: "",
                     relatedColumn: "",
                     columns: [],
                   },
@@ -347,7 +348,7 @@ function RelatedTabEditor({
   number,
   connection,
   tables,
-  parentColumns,
+  parentTable,
   pages,
   change,
   remove,
@@ -357,7 +358,7 @@ function RelatedTabEditor({
   number: number;
   connection: number;
   tables: string[];
-  parentColumns: Column[];
+  parentTable: string;
   pages: RecordPageDefinition[];
   change: (tab: RelatedTab) => void;
   remove: () => void;
@@ -425,6 +426,8 @@ function RelatedTabEditor({
                 ...tab,
                 table: e.target.value,
                 relatedColumn: "",
+                parentColumn: "",
+                lookupField: "",
                 columns: [],
                 targetPageId: null,
                 linkColumn: null,
@@ -438,34 +441,41 @@ function RelatedTabEditor({
           </select>
         </label>
         <label>
-          Parent column
+          Layout lookup relation
           <select
-            aria-label={`Tab ${number} parent column`}
-            required
-            value={tab.parentColumn}
-            onChange={(e) => change({ ...tab, parentColumn: e.target.value })}
+            aria-label={`Tab ${number} lookup relation`}
+            required={!!tab.lookupField || !tab.relatedColumn}
+            value={tab.lookupField || ""}
+            onChange={(e) => {
+              const field = fields.find((f) => f.name === e.target.value);
+              change({
+                ...tab,
+                lookupField: field?.name || "",
+                parentColumn: field?.lookup?.keyColumn || "",
+                relatedColumn: field?.name || "",
+              });
+            }}
           >
-            <option value="">Choose column…</option>
-            {parentColumns.map((c) => (
-              <option key={c.name}>{c.name}</option>
-            ))}
+            <option value="">Choose lookup relation…</option>
+            {fields
+              .filter(
+                (f) => f.widget === "lookup" && f.lookup?.table === parentTable,
+              )
+              .map((f) => (
+                <option key={f.name} value={f.name}>
+                  {f.label || f.name} · {f.name} → {parentTable}.
+                  {f.lookup!.keyColumn}
+                </option>
+              ))}
           </select>
         </label>
-        <label>
-          Related column
-          <select
-            aria-label={`Tab ${number} related column`}
-            required
-            value={tab.relatedColumn}
-            disabled={!columns.length}
-            onChange={(e) => change({ ...tab, relatedColumn: e.target.value })}
-          >
-            <option value="">Choose column…</option>
-            {columns.map((c) => (
-              <option key={c.name}>{c.name}</option>
-            ))}
-          </select>
-        </label>
+        <p className="notice">
+          {tab.lookupField
+            ? `Parent ${parentTable}.${fields.find((f) => f.name === tab.lookupField)?.lookup?.keyColumn || tab.parentColumn} → ${tab.table}.${tab.lookupField}. Lookup copy mappings apply when creating records.`
+            : tab.relatedColumn
+              ? `Legacy mapping: ${tab.parentColumn} → ${tab.relatedColumn}. Select a lookup relation to enable record creation.`
+              : `Configure a lookup on this related table in Editor layouts, pointing to ${parentTable}, then select it here.`}
+        </p>
       </div>
       <fieldset className="visible-related-columns">
         <legend>Visible columns</legend>

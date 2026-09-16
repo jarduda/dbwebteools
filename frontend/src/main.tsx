@@ -680,7 +680,11 @@ export function RecordEditor({
   row,
   close,
   save,
+  initialValues = {},
+  lockedFields = [],
 }: {
+  initialValues?: Record<string, unknown>;
+  lockedFields?: string[];
   base?: string;
   columns: Column[];
   fields: Field[];
@@ -691,17 +695,20 @@ export function RecordEditor({
   const [values, setValues] = useState<Record<string, unknown>>(
       row
         ? { ...row.values }
-        : Object.fromEntries(
-            fields
-              .filter(
-                (f) =>
-                  f.required &&
-                  f.widget === "checkbox" &&
-                  !f.hidden &&
-                  !f.readOnly,
-              )
-              .map((f) => [f.name, false]),
-          ),
+        : {
+            ...Object.fromEntries(
+              fields
+                .filter(
+                  (f) =>
+                    f.required &&
+                    f.widget === "checkbox" &&
+                    !f.hidden &&
+                    !f.readOnly,
+                )
+                .map((f) => [f.name, false]),
+            ),
+            ...initialValues,
+          },
     ),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false);
@@ -766,6 +773,7 @@ export function RecordEditor({
   const layout = (c: Column) => fields.find((f) => f.name === c.name);
   const writable = columns.filter(
     (c) =>
+      !lockedFields.includes(c.name) &&
       !c.generated &&
       !c.autoIncrement &&
       !(row && c.primaryKey) &&
@@ -832,6 +840,12 @@ export function RecordEditor({
             Related fields: {joinError}
           </div>
         )}
+        {lockedFields.length > 0 && (
+          <p className="notice">
+            The parent relation and copied values are filled automatically and
+            locked. Copies are refreshed from the parent when saved.
+          </p>
+        )}
         <div className="editor-grid">
           {[...columns]
             .sort(
@@ -844,6 +858,7 @@ export function RecordEditor({
               const l = layout(c),
                 widget = widgetFor(c, l),
                 disabled =
+                  lockedFields.includes(c.name) ||
                   c.generated ||
                   c.autoIncrement ||
                   !!(row && c.primaryKey) ||

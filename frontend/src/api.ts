@@ -125,6 +125,7 @@ export type ListView = {
 };
 
 export type RelatedTab = {
+  lookupField?: string | null;
   id: string;
   label: string;
   table: string;

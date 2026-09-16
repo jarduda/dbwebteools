@@ -24,7 +24,8 @@ public record RelatedTab(
     string RelatedColumn,
     List<string> Columns,
     int? TargetPageId = null,
-    string? LinkColumn = null
+    string? LinkColumn = null,
+    string? LookupField = null
 );
 
 public record PageDefinition(
@@ -54,9 +55,16 @@ public static class PageSchema
 
 public partial class DatabaseService
 {
-    public async Task<RecordPage> PageRecord(MySqlConnection db, string table, string keyJson)
+    public async Task<RecordPage> PageRecord(
+        MySqlConnection db,
+        string table,
+        string keyJson,
+        MySqlTransaction? transaction = null
+    )
     {
-        var columns = await Columns(db, table);
+        if (string.IsNullOrWhiteSpace(keyJson))
+            throw new ApiError(400, "Complete primary key required.");
+        var columns = await Columns(db, table, transaction);
         var keys = columns.Where(c => c.PrimaryKey).ToList();
         Dictionary<string, JsonElement>? key;
         try
@@ -78,6 +86,7 @@ public partial class DatabaseService
         )
             throw new ApiError(400, "Complete primary key required.");
         await using var cmd = db.CreateCommand();
+        cmd.Transaction = transaction;
         var predicates = new List<string>();
         foreach (var column in keys)
         {
@@ -90,7 +99,8 @@ public partial class DatabaseService
             );
         }
         cmd.CommandText =
-            $"SELECT * FROM {Quote(table)} WHERE {string.Join(" AND ", predicates)} LIMIT 1";
+            $"SELECT * FROM {Quote(table)} WHERE {string.Join(" AND ", predicates)} LIMIT 1"
+            + (transaction != null ? " FOR UPDATE" : "");
         var records = await Read(cmd);
         if (records.Count == 0)
             throw new ApiError(404, "Record no longer exists.");
@@ -126,6 +136,50 @@ public static class PageEndpoints
         try
         {
             await Access(db, ctx, connection, table, "read");
+            return true;
+        }
+        catch (ApiError e) when (e.Status == 403)
+        {
+            return false;
+        }
+    }
+
+    static async Task<RelatedTab> ResolveTab(
+        AppDb db,
+        int connection,
+        string parentTable,
+        RelatedTab tab
+    )
+    {
+        if (string.IsNullOrEmpty(tab.LookupField))
+            return tab; // Legacy manually mapped tabs remain readable.
+        var fields = (await Layout(db, connection, tab.Table)).Fields;
+        var field =
+            fields.Find(f =>
+                f.Name == tab.LookupField && f.Widget == "lookup" && f.Lookup?.Table == parentTable
+            )
+            ?? throw new ApiError(
+                400,
+                "The related lookup no longer points to this page's main table. Update the tab in Page editor."
+            );
+        return tab with { ParentColumn = field.Lookup!.KeyColumn, RelatedColumn = field.Name };
+    }
+
+    static async Task<PageDefinition> ResolvePage(AppDb db, PageDefinition page)
+    {
+        if (page.Tabs == null || page.Tabs.Any(t => t == null))
+            throw new ApiError(400, "Related tabs required.");
+        var tabs = new List<RelatedTab>();
+        foreach (var tab in page.Tabs)
+            tabs.Add(await ResolveTab(db, page.ConnectionId, page.Table, tab));
+        return page with { Tabs = tabs };
+    }
+
+    static async Task<bool> CanCreate(AppDb db, HttpContext ctx, int connection, string table)
+    {
+        try
+        {
+            await Access(db, ctx, connection, table, "create");
             return true;
         }
         catch (ApiError e) when (e.Status == 403)
@@ -261,6 +315,7 @@ public static class PageEndpoints
             async (PageDefinition input, AppDb db, DatabaseService service) =>
             {
                 input = input with { Id = 0 };
+                input = await ResolvePage(db, input);
                 await Validate(input, db, service);
                 var page = new PageConfiguration
                 {
@@ -287,6 +342,7 @@ public static class PageEndpoints
                         "A saved page's connection and table cannot change. Create a new page instead."
                     );
                 input = input with { Id = id };
+                input = await ResolvePage(db, input);
                 await Validate(input, db, service);
                 page.Name = input.Name;
                 page.LinkColumn = input.LinkColumn;
@@ -411,6 +467,7 @@ public static class PageEndpoints
                     Definition(configPage).Tabs.SingleOrDefault(t => t.Id == tabId)
                     ?? throw new ApiError(404, "Related tab not found.");
                 await Access(db, ctx, configPage.ConnectionId, tab.Table, "read");
+                tab = await ResolveTab(db, configPage.ConnectionId, configPage.Table, tab);
                 if (search?.Length > 200)
                     throw new ApiError(400, "Search is limited to 200 characters.");
                 await using var c = await service.Open(config);
@@ -447,6 +504,13 @@ public static class PageEndpoints
                     .ToHashSet();
                 return new
                 {
+                    canCreate = !string.IsNullOrEmpty(tab.LookupField)
+                        && value != null
+                        && result.Columns.Any(col => col.PrimaryKey)
+                        && result.Columns.Any(col =>
+                            col.Name == tab.RelatedColumn && !col.AutoIncrement && !col.Generated
+                        )
+                        && await CanCreate(db, ctx, configPage.ConnectionId, tab.Table),
                     data = result,
                     fields = layout.Fields,
                     visibleColumns = tab.Columns.Where(available.Contains),
@@ -455,5 +519,128 @@ public static class PageEndpoints
                 };
             }
         );
+        foreach (var preview in new[] { true, false })
+        {
+            var isPreview = preview;
+            api.MapPost(
+                "/{id:int}/tabs/{tabId}/" + (preview ? "create-preview" : "create"),
+                async (
+                    int id,
+                    string tabId,
+                    RelatedCreateInput input,
+                    AppDb db,
+                    DatabaseService service,
+                    HttpContext ctx
+                ) =>
+                {
+                    var page =
+                        await db.Pages.FindAsync(id) ?? throw new ApiError(404, "Page not found.");
+                    var config = await Access(db, ctx, page.ConnectionId, page.Table, "read");
+                    var tab =
+                        Definition(page).Tabs.SingleOrDefault(t => t.Id == tabId)
+                        ?? throw new ApiError(404, "Related tab not found.");
+                    await Access(db, ctx, page.ConnectionId, tab.Table, "create");
+                    if (string.IsNullOrEmpty(tab.LookupField))
+                        throw new ApiError(
+                            400,
+                            "Select a layout lookup relation for this tab before creating records."
+                        );
+                    tab = await ResolveTab(db, page.ConnectionId, page.Table, tab);
+                    await using var c = await service.Open(config);
+                    var layout = await Layout(db, page.ConnectionId, tab.Table);
+                    var field = layout.Fields.Single(f => f.Name == tab.LookupField);
+                    var columns = await service.Columns(c, tab.Table);
+                    if (
+                        !columns.Any(col => col.PrimaryKey)
+                        || !columns.Any(col =>
+                            col.Name == field.Name && !col.Generated && !col.AutoIncrement
+                        )
+                    )
+                        throw new ApiError(
+                            400,
+                            "The related table and lookup column must allow record creation."
+                        );
+                    await service.ValidateLookup(
+                        c,
+                        field.Lookup!,
+                        columns.Single(col => col.Name == field.Name)
+                    );
+                    await service.ValidateCopyMappings(c, layout.Fields, columns);
+                    async Task<JsonElement> ParentKey(MySqlTransaction? tx = null)
+                    {
+                        var parent = await service.PageRecord(c, page.Table, input.Key, tx);
+                        var value = parent.Rows[0].Values.GetValueOrDefault(tab.ParentColumn);
+                        if (value == null)
+                            throw new ApiError(400, "The parent's lookup key is empty.");
+                        return JsonSerializer.SerializeToElement(value);
+                    }
+                    var key = await ParentKey();
+                    var values = new Dictionary<string, JsonElement>(input.Values ?? []);
+                    // Parent context is authoritative; ignore any submitted replacement key.
+                    values[field.Name] = key;
+                    if (isPreview)
+                    {
+                        var defaults = await service.CopyLookupValues(c, field.Lookup!, key);
+                        defaults[field.Name] = key;
+                        var virtualColumns = await RecordPresentation.PopulateJoins(
+                            db,
+                            ctx,
+                            page.ConnectionId,
+                            c,
+                            service,
+                            layout.Fields,
+                            columns,
+                            []
+                        );
+                        return Results.Ok(
+                            new
+                            {
+                                connectionId = page.ConnectionId,
+                                table = tab.Table,
+                                columns = columns.Concat(virtualColumns),
+                                fields = layout.Fields,
+                                values = defaults,
+                                lockedFields = defaults.Keys.ToList(),
+                            }
+                        );
+                    }
+                    var mutation = new RowMutation(values, null, null);
+                    var fields = await RecordWrites.Validate(
+                        db,
+                        ctx,
+                        page.ConnectionId,
+                        tab.Table,
+                        mutation,
+                        "create",
+                        service,
+                        c
+                    );
+                    await service.Mutate(
+                        c,
+                        tab.Table,
+                        mutation,
+                        "create",
+                        fields,
+                        async tx =>
+                        {
+                            // Lock/reload the actual parent inside the insertion transaction; copy values are then re-read there too.
+                            values[field.Name] = await ParentKey(tx);
+                        }
+                    );
+                    db.Audit.Add(
+                        new()
+                        {
+                            Actor = ctx.User.Identity!.Name!,
+                            Action = "create",
+                            Resource = $"{page.ConnectionId}/{tab.Table}",
+                        }
+                    );
+                    await db.SaveChangesAsync();
+                    return Results.NoContent();
+                }
+            );
+        }
     }
 }
+
+public record RelatedCreateInput(string Key, Dictionary<string, JsonElement>? Values = null);

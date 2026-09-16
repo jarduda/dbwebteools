@@ -66,6 +66,78 @@ test("define pages and drill through related tabs with record keys and browser h
         },
       );
       if (!layout.ok) throw new Error("Layout failed");
+      for (const [table, fields] of [
+        [
+          "z_page_orders",
+          [
+            {
+              name: "customer_id",
+              label: "Customer",
+              section: "",
+              order: 0,
+              hidden: false,
+              readOnly: false,
+              widget: "lookup",
+              required: true,
+              lookup: {
+                table: "z_page_customers",
+                keyColumn: "id",
+                displayColumn: "name",
+                searchColumns: [],
+                copyMappings: [
+                  { sourceColumn: "email", destinationColumn: "copied_email" },
+                ],
+              },
+            },
+            {
+              name: "copied_email",
+              label: "Customer email",
+              section: "",
+              order: 2,
+              hidden: false,
+              readOnly: false,
+              widget: "text",
+              required: true,
+            },
+            {
+              name: "summary",
+              label: "Summary",
+              section: "",
+              order: 4,
+              hidden: false,
+              readOnly: true,
+              widget: "formula",
+              formula: "Concat([title], ' / ', [copied_email])",
+            },
+          ],
+        ],
+        [
+          "z_page_lines",
+          [
+            {
+              name: "order_id",
+              label: "Order",
+              section: "",
+              order: 0,
+              hidden: false,
+              readOnly: false,
+              widget: "lookup",
+              lookup: {
+                table: "z_page_orders",
+                keyColumn: "id",
+                displayColumn: "title",
+                searchColumns: [],
+              },
+            },
+          ],
+        ],
+      ] as const) {
+        const saved = await fetch(
+          `/api/admin/connections/${id}/tables/${table}/layout`,
+          { method: "PUT", headers, body: JSON.stringify(fields) },
+        );
+        if (!saved.ok) throw new Error("Related lookup layout failed");
+      }
       return id as number;
     },
     {
@@ -104,10 +176,7 @@ test("define pages and drill through related tabs with record keys and browser h
       .getByLabel(`Tab ${n} table`, { exact: true })
       .selectOption(table);
     await page
-      .getByLabel(`Tab ${n} parent column`, { exact: true })
-      .selectOption(parent);
-    await page
-      .getByLabel(`Tab ${n} related column`, { exact: true })
+      .getByLabel(`Tab ${n} lookup relation`, { exact: true })
       .selectOption(related);
     for (const c of columns)
       await page.getByLabel(`Tab ${n} show ${c}`, { exact: true }).check();
@@ -259,6 +328,83 @@ test("define pages and drill through related tabs with record keys and browser h
     "Page Alice",
   );
   await editor.getByRole("button", { name: "Cancel", exact: true }).click();
+  // Creation from the tab inherits the parent and layout copy mappings.
+  await page
+    .getByRole("button", { name: "Add related record", exact: true })
+    .click();
+  let create = page.getByRole("dialog", { name: "Add a record", exact: true });
+  await expect(
+    create.getByRole("button", { name: "Choose Customer", exact: true }),
+  ).toBeDisabled();
+  await expect(
+    create.getByLabel("Customer email", { exact: true }),
+  ).toHaveValue("alice.page@example.test");
+  await expect(
+    create.getByLabel("Customer email", { exact: true }),
+  ).toBeDisabled();
+  await create
+    .getByLabel("title", { exact: true })
+    .fill("Created from parent tab");
+  await create.getByLabel("amount", { exact: true }).fill("17.25");
+  await expect(create.getByLabel("Summary", { exact: true })).toHaveValue(
+    "Created from parent tab / alice.page@example.test",
+  );
+  await create
+    .getByRole("button", { name: "Save record", exact: true })
+    .click();
+  await expect(create).not.toBeVisible();
+  await expect(
+    page.getByRole("link", { name: "Created from parent tab", exact: true }),
+  ).toBeVisible();
+  const stored = await page.evaluate(
+    async ({ id }) =>
+      (
+        await (
+          await fetch(
+            `/api/connections/${id}/tables/z_page_orders/records?search=Created%20from%20parent%20tab`,
+          )
+        ).json()
+      ).rows[0].values,
+    { id },
+  );
+  expect(stored.customer_id).toBe("9007199254740993");
+  expect(stored.copied_email).toBe("alice.page@example.test");
+  await page
+    .getByRole("button", { name: "Add related record", exact: true })
+    .click();
+  create = page.getByRole("dialog", { name: "Add a record", exact: true });
+  await create.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(create).not.toBeVisible();
+  await page.evaluate(
+    async ({ id, stored }) => {
+      const result = await (
+        await fetch(
+          `/api/connections/${id}/tables/z_page_orders/records?search=Created%20from%20parent%20tab`,
+        )
+      ).json();
+      const row = result.rows.find(
+        (r: { values: { id: number } }) => r.values.id === stored.id,
+      );
+      const { token } = await (await fetch("/api/auth/csrf")).json();
+      const response = await fetch(
+        `/api/connections/${id}/tables/z_page_orders/delete`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-CSRF-TOKEN": token,
+          },
+          body: JSON.stringify({
+            key: { id: stored.id },
+            values: {},
+            version: row.version,
+          }),
+        },
+      );
+      if (!response.ok) throw new Error("Fixture cleanup failed");
+    },
+    { id, stored },
+  );
   await page.goto(bookmark);
   await expect(
     page.getByRole("heading", { name: "Line page", exact: true }),
