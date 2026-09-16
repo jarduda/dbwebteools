@@ -5,6 +5,82 @@ namespace DbWeb.Tests;
 
 public class FormulaTests
 {
+    static readonly List<LayoutField> DropdownFields =
+    [
+        new(
+            "name",
+            "Friendly name",
+            "",
+            0,
+            false,
+            false,
+            "dropdown",
+            Options: [new("a", "Awaiting review"), new("b", "Łódź — ready"), new("7", "Seven")]
+        ),
+        new(
+            "other",
+            "Other",
+            "",
+            1,
+            false,
+            false,
+            "dropdown",
+            Options: [new("a", "Another label")]
+        ),
+    ];
+
+    [Theory]
+    [InlineData("DropdownDisplay('name', [name])", "a", "Awaiting review")]
+    [InlineData("DropdownDisplay('other', [name])", "a", "Another label")]
+    [InlineData("DropdownDisplay('name', [name])", "b", "Łódź — ready")]
+    [InlineData("DropdownDisplay('name', [name])", "A", null)]
+    [InlineData("DropdownDisplay('name', [name])", "legacy", null)]
+    [InlineData("DropdownDisplay('name', [name])", null, null)]
+    [InlineData("DropdownDisplay('name', 7)", "a", "Seven")]
+    [InlineData(
+        "Concat('Status: ', Upper(DropdownDisplay('name', [name])))",
+        "a",
+        "Status: AWAITING REVIEW"
+    )]
+    [InlineData("Coalesce(DropdownDisplay('name', [name]), 'Unknown')", "legacy", "Unknown")]
+    public void ResolvesDropdownDisplayByFieldAndExactKey(
+        string formula,
+        string? key,
+        string? expected
+    )
+    {
+        var columns = Columns
+            .Append(new ColumnInfo("other", "varchar", true, false, false, false, null))
+            .ToList();
+        var field = new LayoutField(
+            "display",
+            "Display",
+            "",
+            2,
+            false,
+            true,
+            "formula",
+            Formula: formula
+        );
+        var row = new RecordRow(new() { ["name"] = key }, "unchanged");
+        Formulas.Populate([.. DropdownFields, field], columns, [row]);
+        Assert.Empty(row.CalculationErrors);
+        Assert.Equal(expected, row.JoinedValues["display"]);
+        Assert.Equal(key, row.Values["name"]);
+        Assert.Equal("unchanged", row.Version);
+    }
+
+    [Theory]
+    [InlineData("DropdownDisplay('name')")]
+    [InlineData("DropdownDisplay('name', 'a', 'b')")]
+    [InlineData("DropdownDisplay([name], 'a')")]
+    [InlineData("DropdownDisplay('Friendly name', 'a')")]
+    [InlineData("DropdownDisplay('missing', 'a')")]
+    [InlineData("DropdownDisplay('qty', 'a')")]
+    [InlineData("DropdownDisplay('other', 'a')")]
+    public void ValidatesDropdownFieldReferencesAtLayoutSave(string formula) =>
+        Assert.Throws<ApiError>(() => Formulas.Compile(formula, Columns, DropdownFields));
+
     static readonly List<ColumnInfo> Columns =
     [
         new("price", "decimal", true, false, false, false, null),

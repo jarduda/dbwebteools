@@ -10,3 +10,5 @@ INSERT IGNORE INTO z_list_view_records VALUES (1,'Alpha','open',10),(2,'Beta','o
 CREATE TABLE IF NOT EXISTS z_copy_catalog (id BIGINT PRIMARY KEY, name VARCHAR(100), price DECIMAL(20,4));
 INSERT IGNORE INTO z_copy_catalog VALUES (9007199254740993,'Copy Alice',12.345),(42,'Copy Bob',25);
 CREATE TABLE IF NOT EXISTS z_copy_records (id INT AUTO_INCREMENT PRIMARY KEY, product_id BIGINT NULL, description VARCHAR(100), unit_price DECIMAL(20,4), quantity INT);
+
+CREATE TABLE IF NOT EXISTS z_formula_dropdown_records (id INT AUTO_INCREMENT PRIMARY KEY, title VARCHAR(100), status VARCHAR(30) NULL);
