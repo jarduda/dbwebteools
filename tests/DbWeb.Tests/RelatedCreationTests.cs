@@ -187,6 +187,83 @@ public partial class ApiTests
             );
             Assert.True(listed.GetProperty("canCreate").GetBoolean());
             Assert.Equal(1, listed.GetProperty("data").GetProperty("total").GetInt32());
+            Assert.True(listed.GetProperty("canUpdate").GetBoolean());
+            var original = listed.GetProperty("data").GetProperty("rows")[0];
+            var childKey = new Dictionary<string, JsonElement>
+            {
+                ["id"] = original.GetProperty("values").GetProperty("id").Clone(),
+            };
+            var mutation = new RowMutation(
+                new Dictionary<string, JsonElement>
+                {
+                    ["title"] = JsonSerializer.SerializeToElement("Edited child"),
+                },
+                childKey,
+                original.GetProperty("version").GetString()
+            );
+            Assert.Equal(
+                HttpStatusCode.NotFound,
+                (
+                    await admin.PostAsJsonAsync(
+                        root + "/update",
+                        new RelatedUpdateInput("{\"id\":42}", mutation)
+                    )
+                ).StatusCode
+            );
+            var locked = mutation with
+            {
+                Values = new Dictionary<string, JsonElement>
+                {
+                    ["parent_id"] = JsonSerializer.SerializeToElement(42),
+                },
+            };
+            Assert.Equal(
+                HttpStatusCode.BadRequest,
+                (
+                    await admin.PostAsJsonAsync(
+                        root + "/update",
+                        new RelatedUpdateInput(key, locked)
+                    )
+                ).StatusCode
+            );
+            Assert.Equal(
+                HttpStatusCode.NoContent,
+                (
+                    await admin.PostAsJsonAsync(
+                        root + "/update",
+                        new RelatedUpdateInput(key, mutation)
+                    )
+                ).StatusCode
+            );
+            Assert.Equal(
+                HttpStatusCode.Conflict,
+                (
+                    await admin.PostAsJsonAsync(
+                        root + "/update",
+                        new RelatedUpdateInput(key, mutation)
+                    )
+                ).StatusCode
+            );
+            cmd.CommandText = $"SELECT title FROM `{child}` LIMIT 1";
+            Assert.Equal("Edited child", await cmd.ExecuteScalarAsync());
+            var validatePath =
+                $"/api/admin/connections/{connection}/tables/{child}/formulas/validate";
+            (
+                await admin.PostAsJsonAsync(
+                    validatePath,
+                    new FormulaValidationInput("[qty] * [copied_price]", fields)
+                )
+            ).EnsureSuccessStatusCode();
+            foreach (var invalid in new[] { "[missing] + 1", "[qty] +", "Abs(1,2)", "Unknown(1)" })
+                Assert.Equal(
+                    HttpStatusCode.BadRequest,
+                    (
+                        await admin.PostAsJsonAsync(
+                            validatePath,
+                            new FormulaValidationInput(invalid, fields)
+                        )
+                    ).StatusCode
+                );
             // A changed layout key is resolved live rather than using stale stored mapping columns.
             field = field with
             {
@@ -280,6 +357,33 @@ public partial class ApiTests
                     await member.PostAsJsonAsync(
                         root + "/create",
                         new RelatedCreateInput(key, Values("Denied"))
+                    )
+                ).StatusCode
+            );
+            Assert.Equal(
+                HttpStatusCode.Forbidden,
+                (
+                    await member.PostAsJsonAsync(
+                        root + "/update",
+                        new RelatedUpdateInput(key, mutation)
+                    )
+                ).StatusCode
+            );
+            Assert.False(
+                (
+                    await member.GetFromJsonAsync<JsonElement>(
+                        root + "/records?key=" + Uri.EscapeDataString(key)
+                    )
+                )
+                    .GetProperty("canUpdate")
+                    .GetBoolean()
+            );
+            Assert.Equal(
+                HttpStatusCode.Forbidden,
+                (
+                    await member.PostAsJsonAsync(
+                        validatePath,
+                        new FormulaValidationInput("1+2", fields)
                     )
                 ).StatusCode
             );

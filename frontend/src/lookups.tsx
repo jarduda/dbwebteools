@@ -7,6 +7,7 @@ type LookupPage = {
   page: number;
   size: number;
   columns: string[];
+  numericColumns?: string[];
   rows: Record<string, unknown>[];
 };
 export function LookupConfiguration({
@@ -456,7 +457,13 @@ function LookupDialog({
                 {data.rows.map((r) => (
                   <tr key={String(r[lookup.keyColumn])}>
                     {data.columns.map((c) => (
-                      <td key={c}>{r[c] == null ? "NULL" : String(r[c])}</td>
+                      <td key={c}>
+                        {r[c] == null
+                          ? data.numericColumns?.includes(c)
+                            ? ""
+                            : "NULL"
+                          : String(r[c])}
+                      </td>
                     ))}
                     <td>
                       <button

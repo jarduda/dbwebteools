@@ -9,6 +9,7 @@ import {
   type PageSummary,
   type RelatedTab,
 } from "./api";
+import { Plus, Pencil, Search } from "lucide-react";
 import { cellText } from "./field-controls";
 
 export function recordKey(row: Row, columns: Column[]) {
@@ -43,7 +44,7 @@ export function recordText(row: Row, column: Column, field?: Field) {
     ? row.joinedValues?.[column.name]
     : row.values[column.name];
   return value == null
-    ? "NULL"
+    ? cellText(null, column, field)
     : (row.displayValues?.[column.name] ?? cellText(value, column, field));
 }
 export function PageCell({
@@ -305,6 +306,9 @@ export function RecordPageView({
 }
 
 type RelatedData = {
+  connectionId: number;
+  canUpdate: boolean;
+  lockedFields: string[];
   canCreate: boolean;
   data: Page;
   fields: Field[];
@@ -341,6 +345,7 @@ function RelatedRecords({
     [sort, setSort] = useState(""),
     [desc, setDesc] = useState(false),
     [revision, setRevision] = useState(0),
+    [editing, setEditing] = useState<Row | null>(null),
     [creating, setCreating] = useState(false),
     [preview, setPreview] = useState<CreatePreview | null>(null),
     [notice, setNotice] = useState("");
@@ -387,6 +392,28 @@ function RelatedRecords({
           {notice}
         </p>
       )}
+      {editing && data && (
+        <Editor
+          base={`/connections/${data.connectionId}/tables/${encodeURIComponent(tab.table)}`}
+          columns={allColumns}
+          fields={data.fields}
+          row={editing}
+          lockedFields={data.lockedFields}
+          close={() => setEditing(null)}
+          save={async (values) => {
+            await api(`/pages/${pageId}/tabs/${tab.id}/update`, "POST", {
+              parentKey,
+              mutation: {
+                values,
+                key: recordKey(editing, data.data.columns),
+                version: editing.version,
+              },
+            });
+            setEditing(null);
+            onCreated();
+          }}
+        />
+      )}
       {preview && (
         <Editor
           base={`/connections/${preview.connectionId}/tables/${encodeURIComponent(preview.table)}`}
@@ -412,36 +439,9 @@ function RelatedRecords({
           }}
         />
       )}
-      <div className="toolbar">
-        {data?.canCreate && (
-          <button
-            className="primary"
-            disabled={creating || busy}
-            onClick={async () => {
-              setCreating(true);
-              setError("");
-              setNotice("");
-              try {
-                setPreview(
-                  await api<CreatePreview>(
-                    `/pages/${pageId}/tabs/${tab.id}/create-preview`,
-                    "POST",
-                    { key: parentKey },
-                  ),
-                );
-              } catch (e) {
-                setError((e as Error).message);
-              } finally {
-                setCreating(false);
-              }
-            }}
-          >
-            {creating ? "Preparing…" : "Add related record"}
-          </button>
-        )}
-
-        <label>
-          Search {tab.label}
+      <div className="toolbar related-toolbar">
+        <div className="search">
+          <Search size={17} />
           <input
             aria-label={`Search ${tab.label}`}
             value={search}
@@ -451,18 +451,47 @@ function RelatedRecords({
             }}
             placeholder="Search related records…"
           />
-        </label>
-        {sort && (
-          <button
-            onClick={() => {
-              setSort("");
-              setDesc(false);
-              setPage(1);
-            }}
-          >
-            Use default sorting
-          </button>
-        )}
+        </div>
+        <div className="actions">
+          {sort && (
+            <button
+              onClick={() => {
+                setSort("");
+                setDesc(false);
+                setPage(1);
+              }}
+            >
+              Use default sorting
+            </button>
+          )}
+          {data?.canCreate && (
+            <button
+              className="primary"
+              disabled={creating || busy}
+              onClick={async () => {
+                setCreating(true);
+                setError("");
+                setNotice("");
+                try {
+                  setPreview(
+                    await api<CreatePreview>(
+                      `/pages/${pageId}/tabs/${tab.id}/create-preview`,
+                      "POST",
+                      { key: parentKey },
+                    ),
+                  );
+                } catch (e) {
+                  setError((e as Error).message);
+                } finally {
+                  setCreating(false);
+                }
+              }}
+            >
+              <Plus size={16} />
+              {creating ? "Preparing…" : "Add record"}
+            </button>
+          )}{" "}
+        </div>
       </div>
       {error && (
         <div className="alert" role="alert">
@@ -507,6 +536,7 @@ function RelatedRecords({
                       </button>
                     </th>
                   ))}
+                  {data.canUpdate && <th>Actions</th>}
                 </tr>
               </thead>
               <tbody>
@@ -538,6 +568,18 @@ function RelatedRecords({
                         )}
                       </td>
                     ))}
+                    {data.canUpdate && (
+                      <td>
+                        <button
+                          type="button"
+                          className="icon-button"
+                          aria-label={`Edit record ${i + 1}`}
+                          onClick={() => setEditing(row)}
+                        >
+                          <Pencil size={16} />
+                        </button>
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>

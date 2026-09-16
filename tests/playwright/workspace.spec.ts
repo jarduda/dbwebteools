@@ -269,7 +269,7 @@ test("configure a relation and select, search, reopen and clear its key", async 
   await row.getByRole("button", { name: /Edit record/ }).click();
   await edit.getByRole("button", { name: "Clear Customer" }).click();
   await edit.getByRole("button", { name: "Save record" }).click();
-  await expect(row).toContainText("NULL");
+  await expect(row.getByRole("cell").nth(2)).toHaveText("");
   await row.getByRole("button", { name: /Delete record/ }).click();
   await page
     .getByRole("dialog")
