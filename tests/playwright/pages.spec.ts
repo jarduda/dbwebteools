@@ -100,6 +100,16 @@ test("define pages and drill through related tabs with record keys and browser h
               required: true,
             },
             {
+              name: "line_total",
+              label: "Line total",
+              section: "",
+              order: 5,
+              hidden: false,
+              readOnly: true,
+              widget: "formula",
+              formula: "[amount] * 2",
+            },
+            {
               name: "summary",
               label: "Summary",
               section: "",
@@ -146,6 +156,51 @@ test("define pages and drill through related tabs with record keys and browser h
     },
   );
   await page.reload();
+  await page
+    .getByRole("button", { name: "Editor layouts", exact: true })
+    .click();
+  await page
+    .getByRole("combobox", { name: "Connection", exact: true })
+    .selectOption(String(id));
+  await page
+    .getByRole("combobox", { name: "Table", exact: true })
+    .selectOption("z_page_customers");
+  for (const [field, operation] of [
+    ["order_total", "sum"],
+    ["order_count", "count"],
+  ]) {
+    await page
+      .getByLabel(`${field} control`, { exact: true })
+      .selectOption("sumup");
+    await page
+      .getByLabel(`${field} sum-up operation`, { exact: true })
+      .selectOption(operation);
+    await page
+      .getByLabel(`${field} sum-up relation`, { exact: true })
+      .selectOption(JSON.stringify(["z_page_orders", "customer_id"]));
+    if (operation === "sum")
+      await page
+        .getByLabel(`${field} sum-up source`, { exact: true })
+        .selectOption("line_total");
+  }
+  await page.getByRole("button", { name: "Save layout", exact: true }).click();
+  await expect(
+    page.getByText("Layout saved. Sum-ups initialized.", { exact: true }),
+  ).toBeVisible();
+  const totals = async () =>
+    page.evaluate(
+      async ({ id }) => {
+        const result = await (
+          await fetch(`/api/connections/${id}/tables/z_page_customers/records`)
+        ).json();
+        return result.rows.find(
+          (r: { values: { id: string } }) => r.values.id === "9007199254740993",
+        ).values;
+      },
+      { id },
+    );
+  expect((await totals()).order_total).toBe("50.0000");
+  expect((await totals()).order_count).toBe(1);
   await page.getByRole("button", { name: "Page editor", exact: true }).click();
   async function start(name: string, table: string, link: string) {
     await page.getByRole("button", { name: "New page", exact: true }).click();
@@ -369,6 +424,11 @@ test("define pages and drill through related tabs with record keys and browser h
   );
   expect(stored.customer_id).toBe("9007199254740993");
   expect(stored.copied_email).toBe("alice.page@example.test");
+  expect((await totals()).order_total).toBe("84.5000");
+  expect((await totals()).order_count).toBe(2);
+  await expect(page.getByRole("region", { name: "Main record" })).toContainText(
+    "84.5000",
+  );
   await page
     .getByRole("button", { name: "Add related record", exact: true })
     .click();
@@ -408,6 +468,25 @@ test("define pages and drill through related tabs with record keys and browser h
   await page.goto(bookmark);
   await expect(
     page.getByRole("heading", { name: "Line page", exact: true }),
+  ).toBeVisible();
+  expect((await totals()).order_total).toBe("50.0000");
+  expect((await totals()).order_count).toBe(1);
+  await page
+    .getByRole("button", { name: "Editor layouts", exact: true })
+    .click();
+  await page
+    .getByRole("combobox", { name: "Connection", exact: true })
+    .selectOption(String(id));
+  await page
+    .getByRole("combobox", { name: "Table", exact: true })
+    .selectOption("z_page_customers");
+  await page
+    .getByRole("button", { name: "Recalculate saved sum-ups", exact: true })
+    .click();
+  await expect(
+    page.getByText("Sum-ups recalculated from all existing child records.", {
+      exact: true,
+    }),
   ).toBeVisible();
   expect(errors).toEqual([]);
 });

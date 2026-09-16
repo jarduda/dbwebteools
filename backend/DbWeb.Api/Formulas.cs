@@ -298,6 +298,21 @@ public static class Formulas
         return Text(value);
     }
 
+    public static object? Evaluate(
+        Expression expression,
+        List<ColumnInfo> columns,
+        Dictionary<string, object?> values
+    )
+    {
+        foreach (var name in expression.GetParameterNames().Where(n => n != "null"))
+            expression.Parameters[name] = Typed(
+                values.GetValueOrDefault(name),
+                columns.Single(c => c.Name == name)
+            );
+        using var deadline = new CancellationTokenSource(TimeSpan.FromMilliseconds(100));
+        return expression.Evaluate(deadline.Token);
+    }
+
     public static List<ColumnInfo> Populate(
         List<LayoutField> fields,
         List<ColumnInfo> columns,

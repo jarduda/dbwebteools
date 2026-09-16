@@ -120,6 +120,22 @@ Previously saved manual column mappings remain readable. To enable creation, edi
 
 A saved page's connection/table cannot change, to keep inbound links stable. Remove inbound page links before deleting a page. Deleting a page never deletes MariaDB records. Existing layouts and list behavior remain unchanged until pages are configured.
 
+## Stored sum-up fields
+
+1. On the **child table's Editor layout**, define a lookup pointing to the parent's unique key. Optionally define a numeric **Formula** on the child (for example, `[quantity] * [unit_price]`).
+2. On the **parent layout**, choose **Sum-up (stored total)** for an existing, non-key integer or DECIMAL column. The field becomes read-only. For money, use sufficient precision such as `DECIMAL(18,4)`; no schema columns are created automatically.
+3. Select **Sum** or **Count**, the child lookup relation, and the source field. Sum accepts a numeric stored child column or a numeric child formula. Count with **All child records** counts rows; Count with a source counts its non-NULL results. NULL sum contributions count as zero. Table list filters and user search do not change aggregate membership.
+4. **Save layout** validates the configuration and fills existing parent records. Adding/changing an aggregate, its relation key, or dependent child formula/dropdown definitions rebuilds affected totals. Presentation-only changes do not rebuild totals.
+5. **Recalculate saved sum-ups** forces a complete rebuild for that parent layout using the saved configuration, including zeroing parents with no children. It is administrator-only and ignores unsaved editor changes.
+
+Normal TableSpace create/update/delete operations apply only the changed child's before/after contribution, including both parents when moving a relation. The child write and parent adjustments commit together. Parent rows are locked with MariaDB `SELECT … FOR UPDATE`; a database-scoped advisory gate coordinates writes, configuration changes, and rebuilds across app instances. Busy operations may return a retryable conflict rather than overlap. Parent creation initializes totals (including pre-existing orphan children); deleting a parent with contributing children or changing a relationship key is rejected until children are moved/removed. After related-record creation the parent page refreshes its stored totals.
+
+Rebuilds scan child contributions once per aggregate and stream them, rather than issuing a child scan for every parent. Regular child edits do **not** scan the full child set. Formula errors, overflow, invalid mappings, and insufficient destination scale fail the operation and roll back its data changes. Use `Round(...)` in the child formula when deliberate rounding is needed; implicit per-edit rounding is rejected to prevent total drift. Destinations support exact integers/DECIMAL with up to 28 digits, matching the backend decimal formula engine; FLOAT/DOUBLE destinations and aggregate-on-aggregate formula dependencies are not supported. Parent and child tables must use InnoDB (MariaDB 10.5+).
+
+Automatic maintenance covers writes through **the same configured TableSpace connection**, including normal and page-related creation endpoints. Direct SQL, other applications, and database-trigger/cascade side effects are not change-captured; run full recalculation after those changes. Configure and write through a single connection for a given aggregate relationship. Stored totals follow parent-table read permissions; child writers do not need parent update permission to maintain backend-managed totals. They cannot submit aggregate values directly.
+
+Definitions remain in layout JSON; no MariaDB triggers or auxiliary tables are installed. A durable pending-rebuild marker protects the SQLite/MariaDB configuration handoff: an interrupted backfill is repaired before subsequent record reads or writes. Existing layout/page configurations are preserved until edited.
+
 ## Lookup copies and calculated fields
 
 In **Administration → Editor layouts**, choose **Lookup** for a stored relation column. Under **Copy values to this table**, add source-column → destination-column mappings. Source and destination types must be compatible; destinations must be distinct, writable non-key columns and cannot themselves be lookups. Up to 20 mappings are supported per lookup, within the same connection.

@@ -280,12 +280,23 @@ public partial class DatabaseService(IDataProtectionProvider protection)
         RowMutation input,
         string operation,
         List<LayoutField>? fields = null,
-        Func<MySqlTransaction, Task>? prepare = null
+        Func<MySqlTransaction, Task>? prepare = null,
+        List<SumupPlan>? sumups = null
     )
     {
         if (input.Values == null)
             throw new ApiError(400, "Values object required.");
         var cols = await Columns(db, table);
+        var plans = sumups ?? [];
+        var managed = (fields ?? []).Where(f => f.Widget == "sumup").ToList();
+        if (input.Values.Keys.Any(n => managed.Any(f => f.Name == n)))
+            throw new ApiError(
+                400,
+                "Sum-up fields are managed by the backend and cannot be edited."
+            );
+        if (operation == "create")
+            foreach (var field in managed)
+                input.Values[field.Name] = JsonSerializer.SerializeToElement(0);
         if (!cols.Any(x => x.PrimaryKey))
             throw new ApiError(400, "Tables without a primary key are read-only.");
         foreach (var field in input.Values)
@@ -328,6 +339,7 @@ public partial class DatabaseService(IDataProtectionProvider protection)
             if (input.Version != Version(existing[0]))
                 throw new ApiError(409, "This record changed. Refresh before saving.");
         }
+        await CheckSumupParent(db, tx, plans, table, current, input, operation);
         if (operation != "delete")
         {
             foreach (
@@ -357,7 +369,23 @@ public partial class DatabaseService(IDataProtectionProvider protection)
                 $"UPDATE {Quote(table)} SET {string.Join(",", names.Select((n, i) => $"{Quote(n)}=@v{i}"))} WHERE {where}",
             _ => $"DELETE FROM {Quote(table)} WHERE {where}",
         };
-        await cmd.ExecuteNonQueryAsync();
+        Dictionary<string, object?>? updated = null;
+        if (plans.Count > 0 && operation == "create")
+        {
+            cmd.CommandText += " RETURNING *";
+            updated = (await Read(cmd)).Single();
+        }
+        else
+        {
+            await cmd.ExecuteNonQueryAsync();
+            if (plans.Count > 0 && operation == "update")
+            {
+                cmd.CommandText = $"SELECT * FROM {Quote(table)} WHERE {where}";
+                updated = (await Read(cmd)).Single();
+            }
+        }
+        if (plans.Count > 0)
+            await ApplySumupDeltas(db, tx, plans, table, current, updated);
         await tx.CommitAsync();
     }
 }

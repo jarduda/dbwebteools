@@ -15,7 +15,11 @@ public record ListView(
     List<ListFilter>? Filters = null
 );
 
-public record LayoutDefinition(List<LayoutField> Fields, ListView? View = null);
+public record LayoutDefinition(
+    List<LayoutField> Fields,
+    ListView? View = null,
+    bool SumupsPending = false
+);
 
 public partial class DatabaseService
 {

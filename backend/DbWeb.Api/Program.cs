@@ -140,6 +140,7 @@ app.Use(
                         or AntiforgeryValidationException
                         or DbUpdateException
                         or FormatException
+                        or OverflowException
             )
         {
             var status = ex switch
@@ -442,6 +443,7 @@ api.MapGet(
     {
         var config = await Access(db, ctx, id, table, "read");
         await using var c = await s.Open(config);
+        await Sumups.RepairIfPending(db, s, c, id);
         var layout = await db.Layouts.SingleOrDefaultAsync(x =>
             x.ConnectionId == id && x.Table == table
         );
@@ -496,7 +498,8 @@ admin.MapPut(
         await using var c = await s.Open(
             await db.Connections.FindAsync(id) ?? throw new ApiError(404, "Connection not found.")
         );
-        var definition = DatabaseService.ParseLayout(input);
+        await using var gate = await SumupGate.Enter(c);
+        var definition = DatabaseService.ParseLayout(input) with { SumupsPending = false };
         var fields = definition.Fields;
         var cols = await s.Columns(c, table);
         using var validation = c.CreateCommand();
@@ -522,12 +525,15 @@ admin.MapPut(
                     "lookup",
                     "join",
                     "formula",
+                    "sumup",
                 }.Contains(x.Widget)
             )
         )
             throw new ApiError(400, "Invalid layout fields.");
         foreach (var field in fields)
         {
+            if (field.Widget != "sumup" && field.Sumup != null)
+                throw new ApiError(400, "Only sum-up fields can define sum-up configuration.");
             if (field.Widget is "join" or "formula")
             {
                 if (
@@ -590,8 +596,7 @@ admin.MapPut(
         // Legacy array clients edit fields without erasing newer list-view settings.
         if (input.ValueKind == JsonValueKind.Array)
             definition = definition with { View = DatabaseService.Layout(l.FieldsJson).View };
-        l.FieldsJson = JsonSerializer.Serialize(definition);
-        await db.SaveChangesAsync();
+        await Sumups.SaveLayout(db, s, c, id, l, definition);
         return Results.NoContent();
     }
 );
@@ -742,8 +747,10 @@ foreach (var operation in new[] { "create", "update", "delete" })
         {
             var config = await Access(db, ctx, id, table, op);
             await using var c = await s.Open(config);
+            await using var gate = await SumupGate.Enter(c);
+            var plans = await Sumups.Ready(db, s, c, id);
             var fields = await RecordWrites.Validate(db, ctx, id, table, input, op, s, c);
-            await s.Mutate(c, table, input, op, fields);
+            await s.Mutate(c, table, input, op, fields, sumups: plans);
             db.Audit.Add(
                 new()
                 {
@@ -757,6 +764,87 @@ foreach (var operation in new[] { "create", "update", "delete" })
         }
     );
 }
+admin.MapGet(
+    "/connections/{id:int}/tables/{table}/sumups/relations",
+    async (int id, string table, AppDb db, DatabaseService service) =>
+    {
+        await using var c = await service.Open(
+            await db.Connections.FindAsync(id) ?? throw new ApiError(404, "Connection not found.")
+        );
+        var result = new List<object>();
+        foreach (var layout in await db.Layouts.Where(l => l.ConnectionId == id).ToListAsync())
+        {
+            var fields = DatabaseService.LayoutFields(layout.FieldsJson);
+            var relations = fields
+                .Where(f => f.Widget == "lookup" && f.Lookup?.Table == table)
+                .ToList();
+            if (relations.Count == 0)
+                continue;
+            var columns = await service.Columns(c, layout.Table);
+            var sources = columns
+                .Where(col =>
+                    Sumups.Numeric(col.Type)
+                    && !fields.Any(f => f.Name == col.Name && f.Widget == "sumup")
+                )
+                .Select(col => new
+                {
+                    name = col.Name,
+                    label = fields.Find(f => f.Name == col.Name)?.Label ?? col.Name,
+                    formula = false,
+                })
+                .Concat(
+                    fields
+                        .Where(f => f.Widget == "formula")
+                        .Select(f => new
+                        {
+                            name = f.Name,
+                            label = f.Label,
+                            formula = true,
+                        })
+                )
+                .ToList();
+            foreach (var field in relations)
+                result.Add(
+                    new
+                    {
+                        childTable = layout.Table,
+                        lookupField = field.Name,
+                        label = field.Label,
+                        keyColumn = field.Lookup!.KeyColumn,
+                        sources,
+                    }
+                );
+        }
+        return result;
+    }
+);
+admin.MapPost(
+    "/connections/{id:int}/tables/{table}/sumups/recalculate",
+    async (int id, string table, AppDb db, DatabaseService service, HttpContext ctx) =>
+    {
+        await using var c = await service.Open(
+            await db.Connections.FindAsync(id) ?? throw new ApiError(404, "Connection not found.")
+        );
+        await using var gate = await SumupGate.Enter(c);
+        var plans = await Sumups.Ready(db, service, c, id);
+        var selected = plans.Where(p => p.ParentTable == table).ToList();
+        if (selected.Count == 0)
+            throw new ApiError(400, "Save at least one sum-up on this layout first.");
+        await using var tx = await c.BeginTransactionAsync();
+        await service.RebuildSumups(c, tx, selected);
+        await tx.CommitAsync();
+        db.Audit.Add(
+            new()
+            {
+                Actor = ctx.User.Identity!.Name!,
+                Action = "recalculate sumups",
+                Resource = $"{id}/{table}",
+            }
+        );
+        await db.SaveChangesAsync();
+        return Results.Ok(new { fields = selected.Count });
+    }
+);
 PageEndpoints.Map(app);
 app.Run();
 static void ValidateUser(UserInput i, bool create)

@@ -31,7 +31,9 @@ public partial class DatabaseService
                     || destination.AutoIncrement
                     || destination.PrimaryKey
                     || destination.Name == field.Name
-                    || fields.Any(f => f.Name == destination.Name && f.Widget == "lookup")
+                    || fields.Any(f =>
+                        f.Name == destination.Name && f.Widget is "lookup" or "sumup"
+                    )
                     || !assigned.Add(destination.Name)
                 )
                     throw new ApiError(

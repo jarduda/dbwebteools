@@ -12,8 +12,8 @@ INSERT IGNORE INTO z_copy_catalog VALUES (9007199254740993,'Copy Alice',12.345),
 CREATE TABLE IF NOT EXISTS z_copy_records (id INT AUTO_INCREMENT PRIMARY KEY, product_id BIGINT NULL, description VARCHAR(100), unit_price DECIMAL(20,4), quantity INT);
 
 CREATE TABLE IF NOT EXISTS z_formula_dropdown_records (id INT AUTO_INCREMENT PRIMARY KEY, title VARCHAR(100), status VARCHAR(30) NULL);
-CREATE TABLE IF NOT EXISTS z_page_customers (id BIGINT PRIMARY KEY,name VARCHAR(100),email VARCHAR(100));
-INSERT IGNORE INTO z_page_customers VALUES (9007199254740993,'Page Alice','alice.page@example.test'),(42,'Page Bob','bob.page@example.test');
+CREATE TABLE IF NOT EXISTS z_page_customers (id BIGINT PRIMARY KEY,name VARCHAR(100),email VARCHAR(100),order_total DECIMAL(18,4),order_count INT);
+INSERT IGNORE INTO z_page_customers (id,name,email) VALUES (9007199254740993,'Page Alice','alice.page@example.test'),(42,'Page Bob','bob.page@example.test');
 CREATE TABLE IF NOT EXISTS z_page_orders (id INT AUTO_INCREMENT PRIMARY KEY,customer_id BIGINT,title VARCHAR(100),amount DECIMAL(12,2),copied_email VARCHAR(100));
 INSERT IGNORE INTO z_page_orders (id,customer_id,title,amount) VALUES (1,9007199254740993,'Alice order',25),(2,42,'Bob private order',50);
 CREATE TABLE IF NOT EXISTS z_page_lines (order_id INT,seq INT,title VARCHAR(100),PRIMARY KEY(order_id,seq));

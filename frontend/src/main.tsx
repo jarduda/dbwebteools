@@ -42,6 +42,7 @@ import {
   cellText,
 } from "./field-controls";
 import { LookupConfiguration, LookupInput } from "./lookups";
+import { SumupConfiguration } from "./sumups";
 import { PageEditor } from "./page-editor";
 import { PageCell, RecordPageView, parsePageRoute } from "./record-pages";
 function App() {
@@ -777,7 +778,7 @@ export function RecordEditor({
       !c.generated &&
       !c.autoIncrement &&
       !(row && c.primaryKey) &&
-      !["join", "formula"].includes(layout(c)?.widget || ""),
+      !["join", "formula", "sumup"].includes(layout(c)?.widget || ""),
   );
   const emptyRequired = (c: Column) =>
     layout(c)?.required &&
@@ -885,7 +886,18 @@ export function RecordEditor({
                       {l?.required ? " · Required" : ""}
                     </small>
                   </span>
-                  {l && ["join", "formula"].includes(l.widget) ? (
+                  {l?.widget === "sumup" ? (
+                    <input
+                      aria-label={l.label || c.name}
+                      readOnly
+                      aria-readonly="true"
+                      value={
+                        values[c.name] == null
+                          ? "Calculated automatically"
+                          : String(values[c.name])
+                      }
+                    />
+                  ) : l && ["join", "formula"].includes(l.widget) ? (
                     <input
                       aria-label={l.label || c.name}
                       readOnly
@@ -1600,6 +1612,18 @@ function Admin({
                                         ? {
                                             ...x,
                                             [k]: e.target.value,
+                                            sumup:
+                                              e.target.value === "sumup"
+                                                ? x.sumup
+                                                : undefined,
+                                            readOnly:
+                                              e.target.value === "sumup" ||
+                                              (x.widget !== "sumup" &&
+                                                x.readOnly),
+                                            required:
+                                              e.target.value === "sumup"
+                                                ? false
+                                                : x.required,
                                             lookup:
                                               e.target.value === "lookup"
                                                 ? x.lookup
@@ -1625,6 +1649,25 @@ function Admin({
                                 {f.widget === "join" && (
                                   <option value="join">
                                     Joined (read-only)
+                                  </option>
+                                )}
+                                {layoutColumns.some(
+                                  (c) =>
+                                    c.name === f.name &&
+                                    !c.primaryKey &&
+                                    !c.autoIncrement &&
+                                    !c.generated &&
+                                    [
+                                      "tinyint",
+                                      "smallint",
+                                      "mediumint",
+                                      "int",
+                                      "bigint",
+                                      "decimal",
+                                    ].includes(c.type),
+                                ) && (
+                                  <option value="sumup">
+                                    Sum-up (stored total)
                                   </option>
                                 )}
                                 {[
@@ -1653,8 +1696,9 @@ function Admin({
                               <input
                                 aria-label={`${f.name} ${k}`}
                                 disabled={
-                                  ["join", "formula"].includes(f.widget) &&
-                                  k === "readOnly"
+                                  ["join", "formula", "sumup"].includes(
+                                    f.widget,
+                                  ) && k === "readOnly"
                                 }
                                 type={
                                   k === "hidden" || k === "readOnly"
@@ -1940,6 +1984,41 @@ function Admin({
                   />
                 ))}
               {fields
+                .filter((f) => f.widget === "sumup")
+                .map((f) => (
+                  <SumupConfiguration
+                    key={`${connection}/${table}/${f.name}`}
+                    name={f.name}
+                    connection={connection}
+                    table={table}
+                    value={f.sumup}
+                    change={(sumup) =>
+                      setFields((old) =>
+                        old.map((x) =>
+                          x.name === f.name ? { ...x, sumup } : x,
+                        ),
+                      )
+                    }
+                  />
+                ))}
+              {fields.some((f) => f.widget === "sumup") && (
+                <button
+                  disabled={busy || layoutLoading}
+                  onClick={() =>
+                    action(
+                      () =>
+                        api(
+                          `/admin/connections/${connection}/tables/${encodeURIComponent(table)}/sumups/recalculate`,
+                          "POST",
+                        ),
+                      "Sum-ups recalculated from all existing child records.",
+                    )
+                  }
+                >
+                  Recalculate saved sum-ups
+                </button>
+              )}
+              {fields
                 .filter((f) => f.widget === "lookup")
                 .map((f) => (
                   <LookupConfiguration
@@ -1950,7 +2029,9 @@ function Admin({
                     destinations={layoutColumns.filter(
                       (c) =>
                         !fields.some(
-                          (x) => x.name === c.name && x.widget === "lookup",
+                          (x) =>
+                            x.name === c.name &&
+                            ["lookup", "sumup"].includes(x.widget),
                         ),
                     )}
                     value={f.lookup}
@@ -1970,6 +2051,14 @@ function Admin({
                   busy ||
                   layoutLoading ||
                   fields.length === 0 ||
+                  fields.some(
+                    (f) =>
+                      f.widget === "sumup" &&
+                      (!f.sumup?.childTable ||
+                        !f.sumup?.lookupField ||
+                        (f.sumup?.operation === "sum" &&
+                          !f.sumup?.sourceField)),
+                  ) ||
                   fields.some(
                     (f) =>
                       f.widget === "join" &&
@@ -1995,7 +2084,9 @@ function Admin({
                           view: { ...listView, label: listView.label?.trim() },
                         },
                       ),
-                    "Layout saved.",
+                    fields.some((f) => f.widget === "sumup")
+                      ? "Layout saved. Sum-ups initialized."
+                      : "Layout saved.",
                   )
                 }
               >
