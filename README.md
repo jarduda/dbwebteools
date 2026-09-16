@@ -100,6 +100,22 @@ The scripts restore locked dependencies, build with warnings as errors, run back
 
 To exercise real MariaDB CRUD locally, set `MARIADB_TEST_CONNECTION` to a connection string for a **disposable test database**, then run the script. The integration tests create and drop only randomly named test tables. CI always requires and runs this test against a MariaDB service. Without this environment variable, local runs do not exercise the database integration scenario.
 
+## Record pages and related tabs
+
+Use **Administration → Page editor** to create pages:
+
+1. Choose a name, connection, main table, and **List drill-down column**. Make that column visible in the table's list layout. It becomes a link to the selected record's page. Multiple pages may use the same table with different drill-down columns.
+2. The main record uses the existing **Editor layout** for labels, order, sections, hidden fields, dropdown/lookup labels, joined values, and backend formulas. Authorized users can open the existing record editor from the page.
+3. Add **related tabs**. Choose a related table, a parent column, and the matching related column (for example, `customers.id = orders.customer_id`). Choose and reorder the visible related columns; stored, joined, and formula fields are supported.
+4. Optionally choose a **destination page** for a related tab and the visible column that should link to it. Create destination pages first. Links can continue through further related tabs; composite primary keys and exact large numeric keys are supported.
+5. Save the page. Page definitions are stored in SQLite `app.db` → `Pages`, separately from record layouts. Startup applies an additive, idempotent schema upgrade to existing metadata databases without recreating them.
+
+Pages and nested drill-down links are bookmarkable; browser back/forward navigation works. The related lists support search, sorting, pagination, and the related table's saved list filters. The server re-reads the parent record and adds an independent relationship constraint to every tab query, including counts; client search/filter parameters cannot remove it. A NULL parent relationship value yields an empty tab, not every related row with a NULL value.
+
+A page requires a main table with a scalar primary key. Relationships currently use one compatible column pair within the same connection. Each page supports up to 12 tabs and each tab up to 100 selected columns. Table read access is required for the main record **and** each related table; unauthorized tabs are hidden and their endpoints return 403. Linked pages enforce their own table access. Columns and layouts remain presentation settings, not column-level security; saved list filters are not row-level authorization.
+
+A saved page's connection/table cannot change, to keep inbound links stable. Remove inbound page links before deleting a page. Deleting a page never deletes MariaDB records. Existing layouts and list behavior remain unchanged until pages are configured.
+
 ## Lookup copies and calculated fields
 
 In **Administration → Editor layouts**, choose **Lookup** for a stored relation column. Under **Copy values to this table**, add source-column → destination-column mappings. Source and destination types must be compatible; destinations must be distinct, writable non-key columns and cannot themselves be lookups. Up to 20 mappings are supported per lookup, within the same connection.
@@ -158,7 +174,7 @@ Authentication uses PBKDF2 password hashing through ASP.NET Core PasswordHasher,
 
 Table names and column identifiers are validated against `information_schema` and safely quoted. Values are parameters. Updates/deletes require the full primary key and a record version checked inside a transaction with `SELECT ... FOR UPDATE`. Tables without primary keys are read-only; views are not exposed. Large integer and decimal values are transported as strings to preserve precision; binary values use base64. Defaulted fields omitted from create requests retain their database default.
 
-Layouts are presentation settings, **not column-level security**. Table grants protect all columns in a table. MariaDB transactional tables (InnoDB) are required for reliable concurrency guarantees. Foreign keys and database constraints are enforced by MariaDB; schema editing and file attachments are outside this release. Application metadata currently uses a single SQLite instance; scale the application as a single replica and use migrations before evolving its schema. The activity log and target database are separate stores, not a distributed atomic audit ledger.
+Layouts are presentation settings, **not column-level security**. Table grants protect all columns in a table. MariaDB transactional tables (InnoDB) are required for reliable concurrency guarantees. Foreign keys and database constraints are enforced by MariaDB; schema editing and file attachments are outside this release. Application metadata currently uses a single SQLite instance; scale the application as a single replica. The Pages schema is installed with an additive idempotent upgrade; future schema changes must preserve existing metadata. The activity log and target database are separate stores, not a distributed atomic audit ledger.
 
 ## CI/CD and contributing
 

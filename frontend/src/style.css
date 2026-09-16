@@ -1052,3 +1052,120 @@ input[aria-readonly="true"] {
 .formula-config button {
   justify-self: start;
 }
+
+.record-link {
+  color: #166747;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  font-weight: 600;
+}
+.breadcrumbs {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+.breadcrumbs button {
+  margin-left: auto;
+}
+.record-page > .card {
+  margin-bottom: 24px;
+}
+.page-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 24px;
+  padding: 24px;
+  margin: 0;
+}
+.page-fields .wide {
+  grid-column: 1 / -1;
+}
+.page-fields dt {
+  font-weight: 600;
+  font-size: 13px;
+  margin: 8px 0;
+}
+.page-fields dd {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  padding: 12px 0;
+}
+.page-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 12px;
+  overflow-x: auto;
+  border-bottom: 1px solid #dce3ed;
+}
+.page-tabs button {
+  white-space: nowrap;
+}
+.page-tabs [aria-selected="true"] {
+  background: #143d2e;
+  color: white;
+}
+.related-card [role="tabpanel"] .notice {
+  margin: 16px;
+}
+.page-editor {
+  padding: 24px;
+}
+.page-editor > p {
+  margin: 20px 0;
+}
+.page-config-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+.page-config-grid label {
+  min-width: 0;
+}
+.related-config {
+  padding: 20px;
+  border: 1px solid #dce3ed;
+  border-radius: 12px;
+  margin: 20px 0;
+  min-width: 0;
+}
+.visible-related-columns {
+  margin: 20px 0;
+  padding: 12px;
+  border: 1px solid #dce3ed;
+  min-width: 0;
+}
+.visible-related-columns small {
+  color: #6a7971;
+}
+.column-order {
+  padding-left: 24px;
+}
+.column-order li {
+  margin: 8px 0;
+}
+.column-order li span {
+  display: inline-block;
+  min-width: 100px;
+  margin-right: 16px;
+}
+.column-order button {
+  padding: 4px 10px;
+  margin-right: 4px;
+}
+@media (max-width: 650px) {
+  .page-fields,
+  .page-config-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .page-editor,
+  .related-config {
+    padding: 14px;
+  }
+  .record-page .card-title {
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+}

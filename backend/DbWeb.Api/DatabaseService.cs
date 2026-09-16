@@ -131,7 +131,9 @@ public partial class DatabaseService(IDataProtectionProvider protection)
         bool descending,
         string? search,
         ListView? view = null,
-        List<LayoutField>? fields = null
+        List<LayoutField>? fields = null,
+        ListFilter? relation = null,
+        bool emptyRelation = false
     )
     {
         var cols = await Columns(db, table);
@@ -153,6 +155,17 @@ public partial class DatabaseService(IDataProtectionProvider protection)
             )
             .ToList();
         var predicates = new List<string>();
+        if (emptyRelation)
+            predicates.Add("1=0");
+        else if (relation != null)
+        {
+            var column =
+                cols.Find(c => c.Name == relation.Column)
+                ?? throw new ApiError(400, "Related column no longer exists.");
+            predicates.Add(
+                $"{Quote(column.Name)} = {FilterOperand(cmd, "@relation", column, relation.Value!)}"
+            );
+        }
         var viewPredicate = ViewPredicate(cmd, view, cols);
         if (viewPredicate != "")
             predicates.Add(viewPredicate);

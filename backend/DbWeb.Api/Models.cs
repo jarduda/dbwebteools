@@ -77,9 +77,18 @@ public class AppDb(DbContextOptions<AppDb> options) : DbContext(options)
     public DbSet<TableGrant> Grants => Set<TableGrant>();
     public DbSet<RecordLayout> Layouts => Set<RecordLayout>();
     public DbSet<AuditEntry> Audit => Set<AuditEntry>();
+    public DbSet<PageConfiguration> Pages => Set<PageConfiguration>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
+        b.Entity<PageConfiguration>()
+            .HasIndex(x => new
+            {
+                x.ConnectionId,
+                x.Table,
+                x.LinkColumn,
+            })
+            .IsUnique();
         b.Entity<AppUser>().HasIndex(x => x.Username).IsUnique();
         b.Entity<TableGrant>()
             .HasIndex(x => new

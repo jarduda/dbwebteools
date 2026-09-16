@@ -123,3 +123,23 @@ export type ListView = {
   match?: "all" | "any";
   filters?: ListFilter[] | null;
 };
+
+export type RelatedTab = {
+  id: string;
+  label: string;
+  table: string;
+  parentColumn: string;
+  relatedColumn: string;
+  columns: string[];
+  targetPageId?: number | null;
+  linkColumn?: string | null;
+};
+export type RecordPageDefinition = {
+  id: number;
+  connectionId: number;
+  table: string;
+  name: string;
+  linkColumn: string;
+  tabs: RelatedTab[];
+};
+export type PageSummary = Omit<RecordPageDefinition, "tabs">;
