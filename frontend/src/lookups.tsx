@@ -1,3 +1,4 @@
+import { SEARCH_DELAY_MS } from "./search";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { api, type Column, type Lookup } from "./api";
@@ -419,7 +420,7 @@ function LookupDialog({
         .finally(() => {
           if (active) setBusy(false);
         });
-    }, 250);
+    }, SEARCH_DELAY_MS);
     return () => {
       active = false;
       clearTimeout(timer);

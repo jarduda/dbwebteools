@@ -1,4 +1,5 @@
-import React, { useEffect, useState } from "react";
+import { SEARCH_DELAY_MS } from "./search";
+import React, { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
   Database,
@@ -416,26 +417,48 @@ function Records({
     };
   }, [connection, table]);
   const base = `/connections/${connection}/tables/${encodeURIComponent(table)}`;
+  const loadSequence = useRef(0);
   const load = () => {
+    const sequence = ++loadSequence.current;
     setBusy(true);
     return api<Page>(
       `${base}/records?page=${page}&size=25&search=${encodeURIComponent(query)}${sort ? "&sort=" + encodeURIComponent(sort) + "&descending=" + desc : ""}`,
     )
-      .then(setData)
-      .catch(fail)
-      .finally(() => setBusy(false));
+      .then((result) => {
+        if (sequence === loadSequence.current) setData(result);
+      })
+      .catch((error) => {
+        if (sequence === loadSequence.current) fail(error);
+      })
+      .finally(() => {
+        if (sequence === loadSequence.current) setBusy(false);
+      });
   };
   useEffect(() => {
     load();
-    api<{ grant: Grant; fields: Field[]; view: ListView }>(base + "/settings")
-      .then(setSettings)
-      .catch(fail);
-  }, [page, query, sort, desc]);
+    return () => {
+      ++loadSequence.current;
+    };
+  }, [base, page, query, sort, desc]);
   useEffect(() => {
+    let active = true;
+    api<{ grant: Grant; fields: Field[]; view: ListView }>(base + "/settings")
+      .then((result) => {
+        if (active) setSettings(result);
+      })
+      .catch((error) => {
+        if (active) fail(error);
+      });
+    return () => {
+      active = false;
+    };
+  }, [base]);
+  useEffect(() => {
+    if (search === query) return;
     const timer = setTimeout(() => {
       setQuery(search);
       setPage(1);
-    }, 300);
+    }, SEARCH_DELAY_MS);
     return () => clearTimeout(timer);
   }, [search]);
   const keyFor = (r: Row) => recordKey(r, data!.columns);

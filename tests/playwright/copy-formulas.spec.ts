@@ -1,3 +1,4 @@
+import { expectDebouncedSearch } from "./search-debounce";
 import { test, expect } from "@playwright/test";
 
 test("configure lookup copies and backend formula fields, create and replace relation", async ({
@@ -6,6 +7,7 @@ test("configure lookup copies and backend formula fields, create and replace rel
   test.setTimeout(90_000);
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
+  await page.clock.install();
   await page.goto("/");
   await page.getByLabel("Username", { exact: true }).fill("admin");
   await page
@@ -152,6 +154,13 @@ test("configure lookup copies and backend formula fields, create and replace rel
   await expect(
     page.getByRole("button", { name: "Select Copy Bob (42)", exact: true }),
   ).toBeVisible();
+  await expectDebouncedSearch(
+    page,
+    page.getByLabel("Search related records", { exact: true }),
+    /\/lookups\/product_id$/,
+    "Copy",
+  );
+
   await expect(
     page.getByRole("button", {
       name: "Select Excluded product (43)",

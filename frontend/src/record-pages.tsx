@@ -1,3 +1,4 @@
+import { SEARCH_DELAY_MS } from "./search";
 import {
   useEffect,
   useLayoutEffect,
@@ -453,7 +454,7 @@ function RelatedRecords({
         .finally(() => {
           if (active) setBusy(false);
         });
-    }, 150);
+    }, SEARCH_DELAY_MS);
     return () => {
       active = false;
       clearTimeout(timer);
