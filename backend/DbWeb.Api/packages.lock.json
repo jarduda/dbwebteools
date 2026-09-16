@@ -28,6 +28,15 @@
           "Microsoft.Extensions.Logging.Abstractions": "8.0.2"
         }
       },
+      "NCalcSync": {
+        "type": "Direct",
+        "requested": "[7.2.0, )",
+        "resolved": "7.2.0",
+        "contentHash": "ISmPmIfopiABECx5ncPoi96+Mw7erlyupY+BM0Lc9TRXtl5AtvsS3YdXGdHMHh1p2Jr9+RjTVRSEU2rpcvcu7Q==",
+        "dependencies": {
+          "NCalc.Core": "7.2.0"
+        }
+      },
       "SQLitePCLRaw.bundle_e_sqlite3": {
         "type": "Direct",
         "requested": "[3.0.5, )",
@@ -37,6 +46,11 @@
           "SQLite": "3.53.4",
           "SQLitePCLRaw.config.e_sqlite3": "3.0.5"
         }
+      },
+      "ExtendedNumerics.BigDecimal": {
+        "type": "Transitive",
+        "resolved": "3003.2.0.161",
+        "contentHash": "VMTiP6rMaghsAILVw+2W7FzReJH0kuF+YU9/4u110IWtsCWe+5HvzJqWxyknd860zFEbA9N37+qk5IjRLdF5UQ=="
       },
       "Microsoft.Data.Sqlite.Core": {
         "type": "Transitive",
@@ -170,6 +184,36 @@
         "type": "Transitive",
         "resolved": "9.0.20",
         "contentHash": "F9PkV2d5cHwibxxgklXhXtvVgZlPCJ0rkuY+jpa34o3vdUr0DcGX7XQkZouWuoDSZoYF0gUydM778d0wNpwB+Q=="
+      },
+      "NCalc.Core": {
+        "type": "Transitive",
+        "resolved": "7.2.0",
+        "contentHash": "svJEf/HlfVhD2igJFLxVS06f+CWUKUrBlWtTw+H+Gq0uEBfHU7VyWF8y3NNkstVjChduDkAS89qAaKH0HkfNZA==",
+        "dependencies": {
+          "ExtendedNumerics.BigDecimal": "3003.2.0.161",
+          "Microsoft.Extensions.Logging.Abstractions": "8.0.3",
+          "NCalc.Parser": "7.2.0",
+          "Parlot": "1.5.9"
+        }
+      },
+      "NCalc.Domain": {
+        "type": "Transitive",
+        "resolved": "7.2.0",
+        "contentHash": "C49UItswWCoTAZgRKST2T3zjX9zxGPaBp7RwIYfsdcrPPxQWp6zOGyA1N4h7h2MIyonV6FPUQI+Q6B9FJBOhrw=="
+      },
+      "NCalc.Parser": {
+        "type": "Transitive",
+        "resolved": "7.2.0",
+        "contentHash": "4/kaIIj0xf+Dab2DRZ66wD9Wg6scf226rY31AnTY96lOE15rJOKNFUpWj6ZfAGtO9mQn/POXLBbTx7fGOSQNQA==",
+        "dependencies": {
+          "NCalc.Domain": "7.2.0",
+          "Parlot": "1.5.9"
+        }
+      },
+      "Parlot": {
+        "type": "Transitive",
+        "resolved": "1.5.9",
+        "contentHash": "Vro4ZKVZLBoPdCftyMUlzhlRpegI3N6TlT0zpyn79a42mH214VDqzkAdV70vu578W6NKS84hBA9H6j81cz0dLg=="
       },
       "SQLite": {
         "type": "Transitive",

@@ -1,11 +1,12 @@
 import { defineConfig } from "@playwright/test";
 export default defineConfig({
-  testDir: "./e2e",
+  testDir: ".",
+  outputDir: "../../artifacts/playwright-results",
   use: { baseURL: "http://localhost:5173" },
   webServer: [
     {
       command:
-        "dotnet run --project ../backend/DbWeb.Api --no-launch-profile --urls http://localhost:5190",
+        "dotnet run --project ../../backend/DbWeb.Api --no-launch-profile --urls http://localhost:5190",
       url: "http://localhost:5190/health",
       reuseExistingServer: false,
       env: {
@@ -17,7 +18,7 @@ export default defineConfig({
       },
     },
     {
-      command: "npm run dev",
+      command: "npm --prefix ../../frontend run dev",
       env: { API_PROXY_TARGET: "http://localhost:5190" },
       url: "http://localhost:5173",
       reuseExistingServer: false,
