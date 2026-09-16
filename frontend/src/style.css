@@ -1070,14 +1070,27 @@ input[aria-readonly="true"] {
   margin-left: auto;
 }
 .record-page > .card {
-  margin-bottom: 24px;
+  margin-bottom: 16px;
+}
+.record-page > .heading {
+  margin-bottom: 16px;
+}
+.record-page .card-title {
+  padding: 14px 20px;
 }
 .page-fields {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 24px;
-  padding: 24px;
+  gap: 12px 24px;
+  padding: 0 20px 16px;
   margin: 0;
+}
+.page-fields > div {
+  min-width: 0;
+}
+.page-fields .eyebrow {
+  display: block;
+  margin-bottom: 2px;
 }
 .page-fields .wide {
   grid-column: 1 / -1;
@@ -1085,13 +1098,16 @@ input[aria-readonly="true"] {
 .page-fields dt {
   font-weight: 600;
   font-size: 13px;
-  margin: 8px 0;
+  margin: 0 0 2px;
+  line-height: 1.4;
 }
 .page-fields dd {
   margin: 0;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  padding: 12px 0;
+  padding: 0;
+  line-height: 1.5;
+  min-height: 1.5em;
 }
 .page-tabs {
   display: flex;
@@ -1166,7 +1182,12 @@ input[aria-readonly="true"] {
   }
   .record-page .card-title {
     flex-wrap: wrap;
-    gap: 12px;
+    gap: 8px;
+    padding: 12px 16px;
+  }
+  .page-fields {
+    row-gap: 10px;
+    padding: 0 16px 14px;
   }
 }
 
