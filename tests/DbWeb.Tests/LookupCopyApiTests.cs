@@ -219,6 +219,86 @@ public partial class ApiTests
                 JsonValueKind.Null,
                 (await Row()).GetProperty("values").GetProperty("copied_price").ValueKind
             );
+            // Locked copies stay locked after reopening, including direct API updates.
+            row = await Row();
+            Assert.Equal(
+                HttpStatusCode.BadRequest,
+                (
+                    await admin.PostAsJsonAsync(
+                        path + "/update",
+                        new
+                        {
+                            key,
+                            version = row.GetProperty("version").GetString(),
+                            values = new { copied_name = "Locked override" },
+                        }
+                    )
+                ).StatusCode
+            );
+            fields[0] = lookupField with
+            {
+                Lookup = lookup with
+                {
+                    CopyMappings = [new("name", "copied_name", true), new("price", "copied_price")],
+                },
+            };
+            (await admin.PutAsJsonAsync(layoutPath, fields)).EnsureSuccessStatusCode();
+            // Editable override survives same-request lookup selection, including explicit NULL.
+            (
+                await admin.PostAsJsonAsync(
+                    path + "/update",
+                    new
+                    {
+                        key,
+                        version = row.GetProperty("version").GetString(),
+                        values = new
+                        {
+                            source_id = "42",
+                            copied_name = "My description",
+                            copied_price = "123",
+                        },
+                    }
+                )
+            ).EnsureSuccessStatusCode();
+            row = await Row();
+            Assert.Equal(
+                "My description",
+                row.GetProperty("values").GetProperty("copied_name").GetString()
+            );
+            Assert.Equal(
+                "9007199254740993.1234",
+                row.GetProperty("values").GetProperty("copied_price").GetString()
+            );
+            (
+                await admin.PostAsJsonAsync(
+                    path + "/update",
+                    new
+                    {
+                        key,
+                        version = row.GetProperty("version").GetString(),
+                        values = new { copied_name = (string?)null },
+                    }
+                )
+            ).EnsureSuccessStatusCode();
+            row = await Row();
+            Assert.Equal(
+                JsonValueKind.Null,
+                row.GetProperty("values").GetProperty("copied_name").ValueKind
+            );
+            // Reselecting without an override repopulates even the same lookup key.
+            (
+                await admin.PostAsJsonAsync(
+                    path + "/update",
+                    new
+                    {
+                        key,
+                        version = row.GetProperty("version").GetString(),
+                        values = new { source_id = "42" },
+                    }
+                )
+            ).EnsureSuccessStatusCode();
+            row = await Row();
+            Assert.Equal("Bob", row.GetProperty("values").GetProperty("copied_name").GetString());
             var resolve = await admin.PostAsJsonAsync(
                 path + "/joins/resolve",
                 new

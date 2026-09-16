@@ -111,7 +111,9 @@ export type Lookup = {
   keyColumn: string;
   displayColumn: string;
   searchColumns: string[];
-  copyMappings?: { sourceColumn: string; destinationColumn: string }[] | null;
+  copyMappings?:
+    | { sourceColumn: string; destinationColumn: string; editable?: boolean }[]
+    | null;
   criteria?: ListView | null;
 };
 

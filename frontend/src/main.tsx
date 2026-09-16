@@ -802,8 +802,15 @@ export function RecordEditor({
     };
   }, [base, joinConfig, joinRequest]);
   const layout = (c: Column) => fields.find((f) => f.name === c.name);
+  const lockedCopy = (name: string) =>
+    fields.some((f) =>
+      f.lookup?.copyMappings?.some(
+        (m) => m.destinationColumn === name && !m.editable,
+      ),
+    );
   const writable = columns.filter(
     (c) =>
+      !lockedCopy(c.name) &&
       !lockedFields.includes(c.name) &&
       c.canWrite !== false &&
       !c.generated &&
@@ -849,7 +856,14 @@ export function RecordEditor({
                     c.name in values &&
                     (!row ||
                       values[c.name] !== row.values[c.name] ||
-                      copiedLookups.includes(c.name)),
+                      copiedLookups.includes(c.name) ||
+                      fields.some(
+                        (f) =>
+                          copiedLookups.includes(f.name) &&
+                          f.lookup?.copyMappings?.some(
+                            (m) => m.destinationColumn === c.name && m.editable,
+                          ),
+                      )),
                 )
                 .map((c) => [c.name, values[c.name]]),
             );
@@ -876,7 +890,7 @@ export function RecordEditor({
           <p className="notice">
             {row
               ? "The parent relation is locked while editing in this related list."
-              : "The parent relation and copied values are filled automatically and locked. Copies are refreshed from the parent when saved."}
+              : "The parent relation is filled automatically and locked. Copied fields follow the editing rules configured in the layout."}
           </p>
         )}
         <div className="editor-grid">
@@ -898,13 +912,7 @@ export function RecordEditor({
                   !!(row && c.primaryKey) ||
                   l?.readOnly ||
                   copyBusy ||
-                  fields.some(
-                    (f) =>
-                      copiedLookups.includes(f.name) &&
-                      f.lookup?.copyMappings?.some(
-                        (m) => m.destinationColumn === c.name,
-                      ),
-                  );
+                  lockedCopy(c.name);
               return (
                 <label
                   key={c.name}

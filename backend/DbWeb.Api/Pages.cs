@@ -833,6 +833,7 @@ public static class PageEndpoints
                             new() { [field.Name] = key }
                         );
                         var locked = (field.Lookup!.CopyMappings ?? [])
+                            .Where(m => !m.Editable)
                             .Select(m => m.DestinationColumn)
                             .Append(field.Name)
                             .ToList();
