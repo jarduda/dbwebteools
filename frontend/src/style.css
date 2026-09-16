@@ -1169,3 +1169,21 @@ input[aria-readonly="true"] {
     gap: 12px;
   }
 }
+
+.related-toolbar {
+  align-items: center;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.related-toolbar .search {
+  flex: 1;
+  min-width: 120px;
+}
+.related-toolbar .actions {
+  margin-left: auto;
+  flex-shrink: 0;
+}
+.formula-validation {
+  margin-bottom: 12px;
+}

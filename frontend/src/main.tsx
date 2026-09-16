@@ -42,6 +42,7 @@ import {
   cellText,
 } from "./field-controls";
 import { LookupConfiguration, LookupInput } from "./lookups";
+import { FormulaValidator } from "./formula-validator";
 import { SumupConfiguration } from "./sumups";
 import { PageEditor } from "./page-editor";
 import { PageCell, RecordPageView, parsePageRoute } from "./record-pages";
@@ -843,8 +844,9 @@ export function RecordEditor({
         )}
         {lockedFields.length > 0 && (
           <p className="notice">
-            The parent relation and copied values are filled automatically and
-            locked. Copies are refreshed from the parent when saved.
+            {row
+              ? "The parent relation is locked while editing in this related list."
+              : "The parent relation and copied values are filled automatically and locked. Copies are refreshed from the parent when saved."}
           </p>
         )}
         <div className="editor-grid">
@@ -893,7 +895,9 @@ export function RecordEditor({
                       aria-readonly="true"
                       value={
                         values[c.name] == null
-                          ? "Calculated automatically"
+                          ? row
+                            ? ""
+                            : "Calculated automatically"
                           : String(values[c.name])
                       }
                     />
@@ -910,7 +914,7 @@ export function RecordEditor({
                             : !(c.name in joinedValues)
                               ? "Unavailable"
                               : joinedValues[c.name] == null
-                                ? "NULL"
+                                ? cellText(null, c, l)
                                 : cellText(joinedValues[c.name], c)
                       }
                     />
@@ -1888,6 +1892,12 @@ function Admin({
                     key={f.name}
                   >
                     <legend>{f.name} formula</legend>
+                    <FormulaValidator
+                      connection={connection}
+                      table={table}
+                      field={f}
+                      fields={fields}
+                    />
                     <label>
                       Expression
                       <textarea

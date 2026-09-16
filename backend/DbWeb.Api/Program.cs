@@ -764,6 +764,25 @@ foreach (var operation in new[] { "create", "update", "delete" })
         }
     );
 }
+admin.MapPost(
+    "/connections/{id:int}/tables/{table}/formulas/validate",
+    async (int id, string table, FormulaValidationInput input, AppDb db, DatabaseService service) =>
+    {
+        await using var c = await service.Open(
+            await db.Connections.FindAsync(id) ?? throw new ApiError(404, "Connection not found.")
+        );
+        var fields = input.Fields ?? [];
+        if (fields.Count > 200 || fields.Any(f => f == null))
+            throw new ApiError(400, "Invalid draft layout fields.");
+        Formulas.Compile(input.Formula, await service.Columns(c, table), fields);
+        return Results.Ok(
+            new
+            {
+                message = "Formula is valid. Syntax, column references and function arguments checked; results depend on record values.",
+            }
+        );
+    }
+);
 admin.MapGet(
     "/connections/{id:int}/tables/{table}/sumups/relations",
     async (int id, string table, AppDb db, DatabaseService service) =>

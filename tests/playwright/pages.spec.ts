@@ -107,7 +107,7 @@ test("define pages and drill through related tabs with record keys and browser h
               hidden: false,
               readOnly: true,
               widget: "formula",
-              formula: "[amount] * 2",
+              formula: "Coalesce([amount], 0) * 2",
             },
             {
               name: "summary",
@@ -201,6 +201,29 @@ test("define pages and drill through related tabs with record keys and browser h
     );
   expect((await totals()).order_total).toBe("50.0000");
   expect((await totals()).order_count).toBe(1);
+  await page
+    .getByRole("combobox", { name: "Table", exact: true })
+    .selectOption("z_page_orders");
+  const formula = page.getByLabel("summary expression", { exact: true });
+  await formula.fill("[missing] + 1");
+  await page
+    .getByRole("button", { name: "Validate summary formula", exact: true })
+    .click();
+  const validation = formula
+    .locator("..")
+    .locator("..")
+    .locator(".formula-validation");
+  await expect(validation.getByRole("alert")).toBeVisible();
+  await formula.fill("Concat([title], ' / ', [copied_email])");
+  await page
+    .getByRole("button", { name: "Validate summary formula", exact: true })
+    .click();
+  await expect(validation.getByRole("status")).toContainText(
+    "Formula is valid",
+  );
+  expect((await validation.boundingBox())!.y).toBeLessThan(
+    (await formula.boundingBox())!.y,
+  );
   await page.getByRole("button", { name: "Page editor", exact: true }).click();
   async function start(name: string, table: string, link: string) {
     await page.getByRole("button", { name: "New page", exact: true }).click();
@@ -300,6 +323,9 @@ test("define pages and drill through related tabs with record keys and browser h
   await page
     .getByRole("combobox", { name: "Table", exact: true })
     .selectOption("z_page_customers");
+  const browserAddSize = await page
+    .getByRole("button", { name: "Add record", exact: true })
+    .boundingBox();
   await page.getByRole("link", { name: "Page Alice", exact: true }).click();
   await expect(
     page.getByRole("heading", { name: "Customer page", exact: true }),
@@ -316,14 +342,26 @@ test("define pages and drill through related tabs with record keys and browser h
     panel.getByRole("link", { name: "Alice order", exact: true }),
   ).toBeVisible();
   await expect(panel).not.toContainText("Bob private order");
-  await expect(panel.getByRole("columnheader")).toHaveText(["title", "amount"]);
+  await expect(panel.getByRole("columnheader")).toHaveText([
+    "title",
+    "amount",
+    "Actions",
+  ]);
+  const relatedAddSize = await panel
+    .getByRole("button", { name: "Add record", exact: true })
+    .boundingBox();
+  expect(relatedAddSize!.width).toBeCloseTo(browserAddSize!.width, 0);
+  expect(relatedAddSize!.height).toBeCloseTo(browserAddSize!.height, 0);
+  expect(
+    (await panel.getByLabel("Search Orders", { exact: true }).boundingBox())!.x,
+  ).toBeLessThan(relatedAddSize!.x);
   await panel.getByLabel("Search Orders", { exact: true }).fill("Bob");
   await expect(
     panel.getByText("No related records found.", { exact: true }),
   ).toBeVisible();
   await page.getByRole("tab", { name: "Amounts", exact: true }).click();
   await expect(page.getByRole("tabpanel").getByRole("columnheader")).toHaveText(
-    ["amount"],
+    ["amount", "Actions"],
   );
   await page
     .getByRole("tab", { name: "Amounts", exact: true })
@@ -384,9 +422,7 @@ test("define pages and drill through related tabs with record keys and browser h
   );
   await editor.getByRole("button", { name: "Cancel", exact: true }).click();
   // Creation from the tab inherits the parent and layout copy mappings.
-  await page
-    .getByRole("button", { name: "Add related record", exact: true })
-    .click();
+  await page.getByRole("button", { name: "Add record", exact: true }).click();
   let create = page.getByRole("dialog", { name: "Add a record", exact: true });
   await expect(
     create.getByRole("button", { name: "Choose Customer", exact: true }),
@@ -429,12 +465,42 @@ test("define pages and drill through related tabs with record keys and browser h
   await expect(page.getByRole("region", { name: "Main record" })).toContainText(
     "84.5000",
   );
-  await page
-    .getByRole("button", { name: "Add related record", exact: true })
-    .click();
+  await page.getByRole("button", { name: "Add record", exact: true }).click();
   create = page.getByRole("dialog", { name: "Add a record", exact: true });
   await create.getByRole("button", { name: "Cancel", exact: true }).click();
   await expect(create).not.toBeVisible();
+  const relatedRow = page
+    .getByRole("tabpanel")
+    .getByRole("row")
+    .filter({ hasText: "Created from parent tab" });
+  await relatedRow.getByRole("button", { name: /Edit record/ }).click();
+  let editRelated = page.getByRole("dialog", {
+    name: "Edit record",
+    exact: true,
+  });
+  await expect(
+    editRelated.getByRole("button", { name: "Choose Customer", exact: true }),
+  ).toBeDisabled();
+  await editRelated.getByLabel("amount", { exact: true }).fill("20");
+  await editRelated
+    .getByRole("button", { name: "Save record", exact: true })
+    .click();
+  await expect(editRelated).not.toBeVisible();
+  expect((await totals()).order_total).toBe("90.0000");
+  expect((await totals()).order_count).toBe(2);
+  await relatedRow.getByRole("button", { name: /Edit record/ }).click();
+  editRelated = page.getByRole("dialog", { name: "Edit record", exact: true });
+  await editRelated
+    .getByLabel("amount", { exact: true })
+    .locator("..")
+    .getByRole("checkbox")
+    .check();
+  await editRelated
+    .getByRole("button", { name: "Save record", exact: true })
+    .click();
+  await expect(editRelated).not.toBeVisible();
+  await expect(relatedRow.getByRole("cell").nth(1)).toHaveText("");
+  expect((await totals()).order_total).toBe("50.0000");
   await page.evaluate(
     async ({ id, stored }) => {
       const result = await (

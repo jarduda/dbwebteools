@@ -108,6 +108,35 @@ public partial class DatabaseService
     }
 }
 
+public partial class DatabaseService
+{
+    public async Task RequireRelated(
+        MySqlConnection c,
+        MySqlTransaction tx,
+        string table,
+        List<ColumnInfo> columns,
+        RecordRow child,
+        string relation,
+        object parentValue
+    )
+    {
+        using var cmd = new MySqlCommand { Connection = c, Transaction = tx };
+        var keys = columns.Where(col => col.PrimaryKey).ToList();
+        var predicates = new List<string>();
+        foreach (var key in keys)
+        {
+            var name = "@key" + predicates.Count;
+            predicates.Add($"{Quote(key.Name)}={name}");
+            cmd.Parameters.AddWithValue(name, child.Values[key.Name]);
+        }
+        cmd.Parameters.AddWithValue("@parent", parentValue);
+        cmd.CommandText =
+            $"SELECT 1 FROM {Quote(table)} WHERE {string.Join(" AND ", predicates)} AND {Quote(relation)}=@parent FOR UPDATE";
+        if (await cmd.ExecuteScalarAsync() == null)
+            throw new ApiError(404, "Record does not belong to this parent's related list.");
+    }
+}
+
 public static class PageEndpoints
 {
     static readonly JsonSerializerOptions Json = new() { PropertyNameCaseInsensitive = true };
@@ -173,6 +202,19 @@ public static class PageEndpoints
         foreach (var tab in page.Tabs)
             tabs.Add(await ResolveTab(db, page.ConnectionId, page.Table, tab));
         return page with { Tabs = tabs };
+    }
+
+    static async Task<bool> CanUpdate(AppDb db, HttpContext ctx, int connection, string table)
+    {
+        try
+        {
+            await Access(db, ctx, connection, table, "update");
+            return true;
+        }
+        catch (ApiError e) when (e.Status == 403)
+        {
+            return false;
+        }
     }
 
     static async Task<bool> CanCreate(AppDb db, HttpContext ctx, int connection, string table)
@@ -506,6 +548,10 @@ public static class PageEndpoints
                     .ToHashSet();
                 return new
                 {
+                    connectionId = configPage.ConnectionId,
+                    canUpdate = result.Columns.Any(col => col.PrimaryKey)
+                        && await CanUpdate(db, ctx, configPage.ConnectionId, tab.Table),
+                    lockedFields = new[] { tab.RelatedColumn },
                     canCreate = !string.IsNullOrEmpty(tab.LookupField)
                         && value != null
                         && result.Columns.Any(col => col.PrimaryKey)
@@ -519,6 +565,84 @@ public static class PageEndpoints
                     targetPageId = tab.TargetPageId,
                     linkColumn = tab.LinkColumn,
                 };
+            }
+        );
+        api.MapPost(
+            "/{id:int}/tabs/{tabId}/update",
+            async (
+                int id,
+                string tabId,
+                RelatedUpdateInput input,
+                AppDb db,
+                DatabaseService service,
+                HttpContext ctx
+            ) =>
+            {
+                var page =
+                    await db.Pages.FindAsync(id) ?? throw new ApiError(404, "Page not found.");
+                var config = await Access(db, ctx, page.ConnectionId, page.Table, "read");
+                var tab =
+                    Definition(page).Tabs.SingleOrDefault(t => t.Id == tabId)
+                    ?? throw new ApiError(404, "Related tab not found.");
+                await Access(db, ctx, page.ConnectionId, tab.Table, "update");
+                await using var c = await service.Open(config);
+                await using var gate = await SumupGate.Enter(c);
+                var plans = await Sumups.Ready(db, service, c, page.ConnectionId);
+                tab = await ResolveTab(db, page.ConnectionId, page.Table, tab);
+                if (input.Mutation?.Values == null)
+                    throw new ApiError(400, "Record values required.");
+                if (input.Mutation.Values.ContainsKey(tab.RelatedColumn))
+                    throw new ApiError(400, "The parent relation is locked in this related list.");
+                var fields = await RecordWrites.Validate(
+                    db,
+                    ctx,
+                    page.ConnectionId,
+                    tab.Table,
+                    input.Mutation,
+                    "update",
+                    service,
+                    c
+                );
+                await service.Mutate(
+                    c,
+                    tab.Table,
+                    input.Mutation,
+                    "update",
+                    fields,
+                    async tx =>
+                    {
+                        var parent = await service.PageRecord(c, page.Table, input.ParentKey, tx);
+                        var parentValue = parent.Rows[0].Values.GetValueOrDefault(tab.ParentColumn);
+                        if (parentValue == null)
+                            throw new ApiError(404, "This parent has no related record key.");
+                        var child = await service.PageRecord(
+                            c,
+                            tab.Table,
+                            JsonSerializer.Serialize(input.Mutation.Key),
+                            tx
+                        );
+                        await service.RequireRelated(
+                            c,
+                            tx,
+                            tab.Table,
+                            child.Columns,
+                            child.Rows[0],
+                            tab.RelatedColumn,
+                            parentValue
+                        );
+                    },
+                    plans
+                );
+                db.Audit.Add(
+                    new()
+                    {
+                        Actor = ctx.User.Identity!.Name!,
+                        Action = "update",
+                        Resource = $"{page.ConnectionId}/{tab.Table}",
+                    }
+                );
+                await db.SaveChangesAsync();
+                return Results.NoContent();
             }
         );
         foreach (var preview in new[] { true, false })
@@ -649,3 +773,5 @@ public static class PageEndpoints
 }
 
 public record RelatedCreateInput(string Key, Dictionary<string, JsonElement>? Values = null);
+
+public record RelatedUpdateInput(string ParentKey, RowMutation Mutation);

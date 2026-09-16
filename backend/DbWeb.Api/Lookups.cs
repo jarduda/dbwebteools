@@ -92,7 +92,7 @@ public partial class DatabaseService
         string? search
     )
     {
-        await ValidateLookup(db, lookup);
+        var schema = await ValidateLookup(db, lookup);
         var names = new[] { lookup.KeyColumn, lookup.DisplayColumn }
             .Concat(lookup.SearchColumns)
             .Distinct()
@@ -128,6 +128,9 @@ public partial class DatabaseService
             page,
             size,
             columns = names,
+            numericColumns = schema
+                .Where(c => Sumups.Numeric(c.Type) || c.Type is "bit" or "year")
+                .Select(c => c.Name),
             rows = await Read(cmd),
         };
     }
