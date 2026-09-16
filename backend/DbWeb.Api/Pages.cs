@@ -606,7 +606,15 @@ public static class PageEndpoints
                     layout.Fields,
                     new ListFilter(tab.RelatedColumn, "eq", DatabaseService.KeyText(value)),
                     value == null,
-                    readable
+                    readable,
+                    string.IsNullOrEmpty(search)
+                        ? []
+                        : await FieldAccess.SearchLookups(
+                            db,
+                            ctx,
+                            configPage.ConnectionId,
+                            safeFields
+                        )
                 );
                 await RecordPresentation.Decorate(
                     db,

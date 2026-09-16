@@ -141,7 +141,8 @@ public partial class DatabaseService(IDataProtectionProvider protection)
         List<LayoutField>? fields = null,
         ListFilter? relation = null,
         bool emptyRelation = false,
-        HashSet<string>? readable = null
+        HashSet<string>? readable = null,
+        List<LayoutField>? lookupSearchFields = null
     )
     {
         var cols = await Columns(db, table);
@@ -193,7 +194,7 @@ public partial class DatabaseService(IDataProtectionProvider protection)
         var viewPredicate = ViewPredicate(cmd, view, cols);
         if (viewPredicate != "")
             predicates.Add(viewPredicate);
-        if (!string.IsNullOrEmpty(search) && searchable.Count > 0)
+        if (!string.IsNullOrEmpty(search))
         {
             var matches = searchable.Select(x => $"{Quote(x.Name)} LIKE @search").ToList();
             // Translate friendly labels to exact stored keys before counting/paging.
@@ -220,11 +221,38 @@ public partial class DatabaseService(IDataProtectionProvider protection)
                 if (keys.Count > 0)
                     matches.Add($"BINARY {Quote(field.Name)} IN ({string.Join(", ", keys)})");
             }
-            predicates.Add("(" + string.Join(" OR ", matches) + ")");
+            // Only permission-approved lookup definitions reach this query. EXISTS keeps
+            // counts and pagination exact without materializing every matching related key.
+            foreach (var field in lookupSearchFields ?? [])
+            {
+                if (
+                    field.Lookup is not { } lookup
+                    || (readable != null && !readable.Contains(field.Name))
+                )
+                    continue;
+                await ValidateLookup(db, lookup, cols.Single(c => c.Name == field.Name));
+                var aliasName = "lookup_search_" + matches.Count;
+                while (aliasName.Equals(table, StringComparison.OrdinalIgnoreCase))
+                    aliasName += "_";
+                var alias = Quote(aliasName);
+                var names = lookup
+                    .SearchColumns.Append(lookup.KeyColumn)
+                    .Append(lookup.DisplayColumn)
+                    .Distinct();
+                var terms = names.Select(n =>
+                    $"CONVERT({alias}.{Quote(n)} USING utf8mb4) COLLATE utf8mb4_unicode_ci LIKE @lookupSearch ESCAPE '!'"
+                );
+                matches.Add(
+                    $"EXISTS (SELECT 1 FROM {Quote(lookup.Table)} AS {alias} WHERE {alias}.{Quote(lookup.KeyColumn)} = {Quote(table)}.{Quote(field.Name)} AND ({string.Join(" OR ", terms)}))"
+                );
+            }
+            cmd.Parameters.AddWithValue(
+                "@lookupSearch",
+                "%" + search.Replace("!", "!!").Replace("%", "!%").Replace("_", "!_") + "%"
+            );
+            predicates.Add(matches.Count == 0 ? "1=0" : "(" + string.Join(" OR ", matches) + ")");
             cmd.Parameters.AddWithValue("@search", "%" + search + "%");
         }
-        if (!string.IsNullOrEmpty(search) && searchable.Count == 0)
-            predicates.Add("1=0");
         var where = predicates.Count == 0 ? "" : " WHERE " + string.Join(" AND ", predicates);
         var order = $"{Quote(sort)} {(descending ? "DESC" : "ASC")}";
         foreach (var key in cols.Where(c => c.PrimaryKey && c.Name != sort))

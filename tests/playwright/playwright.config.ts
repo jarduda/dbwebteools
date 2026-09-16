@@ -2,11 +2,19 @@ import { defineConfig } from "@playwright/test";
 export default defineConfig({
   testDir: ".",
   projects: [
-    { name: "workspace", testIgnore: /field-access.spec.ts/ },
+    {
+      name: "workspace",
+      testIgnore: /field-access.spec.ts|session-recovery.spec.ts/,
+    },
     {
       name: "field-security",
       testMatch: /field-access.spec.ts/,
       dependencies: ["workspace"],
+    },
+    {
+      name: "session-recovery",
+      testMatch: /session-recovery.spec.ts/,
+      dependencies: ["field-security"],
     },
   ],
   outputDir: "../../artifacts/playwright-results",
