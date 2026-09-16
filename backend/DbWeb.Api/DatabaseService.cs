@@ -52,12 +52,13 @@ public partial class DatabaseService(IDataProtectionProvider protection)
         }
     }
 
-    public async Task<List<string>> Tables(MySqlConnection db)
+    public async Task<List<string>> Tables(MySqlConnection db, MySqlTransaction? transaction = null)
     {
         await using var cmd = new MySqlCommand(
             "SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE() AND TABLE_TYPE='BASE TABLE' ORDER BY TABLE_NAME",
             db
         );
+        cmd.Transaction = transaction;
         await using var r = await cmd.ExecuteReaderAsync();
         var a = new List<string>();
         while (await r.ReadAsync())
@@ -65,15 +66,20 @@ public partial class DatabaseService(IDataProtectionProvider protection)
         return a;
     }
 
-    public async Task<List<ColumnInfo>> Columns(MySqlConnection db, string table)
+    public async Task<List<ColumnInfo>> Columns(
+        MySqlConnection db,
+        string table,
+        MySqlTransaction? transaction = null
+    )
     {
-        if (!(await Tables(db)).Contains(table, StringComparer.Ordinal))
+        if (!(await Tables(db, transaction)).Contains(table, StringComparer.Ordinal))
             throw new ApiError(404, "Table not found.");
         await using var cmd = new MySqlCommand(
             "SELECT COLUMN_NAME,DATA_TYPE,IS_NULLABLE,COLUMN_KEY,EXTRA,COLUMN_DEFAULT FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME=@table ORDER BY ORDINAL_POSITION",
             db
         );
         cmd.Parameters.AddWithValue("@table", table);
+        cmd.Transaction = transaction;
         await using var r = await cmd.ExecuteReaderAsync();
         var a = new List<ColumnInfo>();
         while (await r.ReadAsync())
@@ -273,7 +279,8 @@ public partial class DatabaseService(IDataProtectionProvider protection)
         string table,
         RowMutation input,
         string operation,
-        List<LayoutField>? fields = null
+        List<LayoutField>? fields = null,
+        Func<MySqlTransaction, Task>? prepare = null
     )
     {
         if (input.Values == null)
@@ -293,6 +300,8 @@ public partial class DatabaseService(IDataProtectionProvider protection)
         if (operation != "delete")
             await ValidateCopyMappings(db, fields ?? [], cols);
         await using var tx = await db.BeginTransactionAsync();
+        if (prepare != null)
+            await prepare(tx);
         await using var cmd = db.CreateCommand();
         cmd.Transaction = tx;
         string where = "";
