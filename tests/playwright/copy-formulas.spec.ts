@@ -65,6 +65,30 @@ test("configure lookup copies and backend formula fields, create and replace rel
   await page
     .getByLabel("product_id copy 2 destination")
     .selectOption("unit_price");
+  const criteria = page.getByRole("region", {
+    name: "product_id lookup criteria",
+    exact: true,
+  });
+  await criteria
+    .getByRole("button", { name: "Add filter", exact: true })
+    .click();
+  await criteria
+    .getByLabel("Filter 1 field", { exact: true })
+    .selectOption("price");
+  await criteria
+    .getByLabel("Filter 1 condition", { exact: true })
+    .selectOption("gt");
+  await criteria.getByLabel("Filter 1 value", { exact: true }).fill("0");
+  await page
+    .getByLabel("quantity default mode", { exact: true })
+    .selectOption("value");
+  await page.getByLabel("quantity default value", { exact: true }).fill("2");
+  await page
+    .getByLabel("product_id default mode", { exact: true })
+    .selectOption("value");
+  await page
+    .getByLabel("product_id default value", { exact: true })
+    .fill("9007199254740993");
   await page.getByRole("button", { name: "Add formula field" }).click();
   await page.getByLabel("formula_1 label", { exact: true }).fill("Line total");
   await page
@@ -91,6 +115,12 @@ test("configure lookup copies and backend formula fields, create and replace rel
   await expect(page.getByLabel("product_id copy 2 destination")).toHaveValue(
     "unit_price",
   );
+  await expect(
+    page.getByLabel("quantity default value", { exact: true }),
+  ).toHaveValue("2");
+  await expect(
+    criteria.getByLabel("Filter 1 value", { exact: true }),
+  ).toHaveValue("0");
   await page.getByRole("button", { name: "Data browser", exact: true }).click();
   await page
     .getByRole("combobox", { name: "Connection", exact: true })
@@ -100,10 +130,25 @@ test("configure lookup copies and backend formula fields, create and replace rel
     .selectOption("z_copy_records");
   await page.getByRole("button", { name: "Add record", exact: true }).click();
   let editor = page.getByRole("dialog", { name: "Add a record", exact: true });
-  await editor.getByLabel("quantity", { exact: true }).fill("2");
+  await expect(editor.getByLabel("quantity", { exact: true })).toHaveValue("2");
+  await expect(editor.getByLabel("description", { exact: true })).toHaveValue(
+    "Copy Alice",
+  );
+  await expect(editor.getByLabel("unit_price", { exact: true })).toHaveValue(
+    "12.3450",
+  );
   await editor
     .getByRole("button", { name: "Choose product_id", exact: true })
     .click();
+  await expect(
+    page.getByRole("button", { name: "Select Copy Bob (42)", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", {
+      name: "Select Excluded product (43)",
+      exact: true,
+    }),
+  ).toHaveCount(0);
   await page
     .getByRole("button", {
       name: "Select Copy Alice (9007199254740993)",

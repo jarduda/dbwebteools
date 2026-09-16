@@ -75,6 +75,7 @@ export type Sumup = {
   sourceField?: string | null;
 };
 export type Field = {
+  creationDefault?: { value?: string | null; isNull?: boolean } | null;
   sumup?: Sumup | null;
   name: string;
   label: string;
@@ -107,6 +108,7 @@ export type Lookup = {
   displayColumn: string;
   searchColumns: string[];
   copyMappings?: { sourceColumn: string; destinationColumn: string }[] | null;
+  criteria?: ListView | null;
 };
 
 export type DropdownOption = { key: string; display: string };

@@ -287,6 +287,8 @@ public partial class DatabaseService(IDataProtectionProvider protection)
         if (input.Values == null)
             throw new ApiError(400, "Values object required.");
         var cols = await Columns(db, table);
+        if (operation == "create")
+            ApplyCreationDefaults(fields ?? [], cols, input.Values);
         var plans = sumups ?? [];
         var managed = (fields ?? []).Where(f => f.Widget == "sumup").ToList();
         if (input.Values.Keys.Any(n => managed.Any(f => f.Name == n)))
@@ -343,9 +345,7 @@ public partial class DatabaseService(IDataProtectionProvider protection)
         if (operation != "delete")
         {
             foreach (
-                var field in (fields ?? []).Where(f =>
-                    f.Widget == "lookup" && f.Lookup?.CopyMappings is { Count: > 0 }
-                )
+                var field in (fields ?? []).Where(f => f.Widget == "lookup" && f.Lookup != null)
             )
                 if (input.Values.TryGetValue(field.Name, out var selectedKey))
                     foreach (

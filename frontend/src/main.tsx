@@ -42,6 +42,7 @@ import {
   cellText,
 } from "./field-controls";
 import { LookupConfiguration, LookupInput } from "./lookups";
+import { CreationDefaultEditor } from "./creation-defaults";
 import { FormulaValidator } from "./formula-validator";
 import { SumupConfiguration } from "./sumups";
 import { PageEditor } from "./page-editor";
@@ -390,6 +391,10 @@ function Records({
     [editing, setEditing] = useState<Row | null | undefined>(undefined),
     [deleting, setDeleting] = useState<Row | null>(null),
     [busy, setBusy] = useState(false);
+  const [creationValues, setCreationValues] = useState<Record<string, unknown>>(
+    {},
+  );
+  const [preparing, setPreparing] = useState(false);
   const [recordPages, setRecordPages] = useState<PageSummary[]>([]);
   useEffect(() => {
     let active = true;
@@ -458,7 +463,24 @@ function Records({
             <span className="count">{data?.total ?? "…"} records</span>
           </div>
           {settings?.grant.create && mutable && (
-            <button className="primary" onClick={() => setEditing(null)}>
+            <button
+              className="primary"
+              disabled={preparing}
+              onClick={async () => {
+                setPreparing(true);
+                try {
+                  const preview = await api<{
+                    values: Record<string, unknown>;
+                  }>(base + "/create-preview", "POST");
+                  setCreationValues(preview.values);
+                  setEditing(null);
+                } catch (e) {
+                  fail(e);
+                } finally {
+                  setPreparing(false);
+                }
+              }}
+            >
               <Plus size={16} />
               Add record
             </button>
@@ -627,6 +649,7 @@ function Records({
           columns={[...data.columns, ...(data.joinedColumns || [])]}
           fields={settings?.fields || []}
           row={editing}
+          initialValues={creationValues}
           close={() => setEditing(undefined)}
           save={async (values) => {
             await api(base + (editing ? "/update" : "/create"), "POST", {
@@ -1561,7 +1584,9 @@ function Admin({
                 controls. List visibility is independent of editor visibility.
                 Required fields must be filled before creating or updating a
                 record. Hidden, read-only, and generated fields cannot be marked
-                required.
+                required. Creation defaults fill new records only; explicit
+                values, parent relations, and lookup copies take precedence.
+                Database defaults remain unchanged.
               </p>
               <div className="table-scroll">
                 <table>
@@ -1577,6 +1602,7 @@ function Admin({
                       <th>Required</th>
                       <th>Show in list</th>
                       <th>List order</th>
+                      <th>Creation default</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1616,6 +1642,10 @@ function Admin({
                                         ? {
                                             ...x,
                                             [k]: e.target.value,
+                                            creationDefault:
+                                              e.target.value === "sumup"
+                                                ? null
+                                                : x.creationDefault,
                                             sumup:
                                               e.target.value === "sumup"
                                                 ? x.sumup
@@ -1803,6 +1833,23 @@ function Admin({
                                         ...x,
                                         listOrder: Number(e.target.value),
                                       }
+                                    : x,
+                                ),
+                              )
+                            }
+                          />
+                        </td>
+                        <td>
+                          <CreationDefaultEditor
+                            field={f}
+                            column={layoutColumns.find(
+                              (c) => c.name === f.name,
+                            )}
+                            change={(creationDefault) =>
+                              setFields((old) =>
+                                old.map((x) =>
+                                  x.name === f.name
+                                    ? { ...x, creationDefault }
                                     : x,
                                 ),
                               )

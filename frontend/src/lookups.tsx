@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { api, type Column, type Lookup } from "./api";
+import { ListViewEditor } from "./list-view";
 
 type LookupPage = {
   total: number;
@@ -139,6 +140,16 @@ export function LookupConfiguration({
             ))}
         </div>
       </fieldset>
+      {schema && (
+        <ListViewEditor
+          filtersOnly
+          name={`${name} lookup criteria`}
+          columns={schema.columns}
+          fields={[]}
+          value={current.criteria || { match: "all", filters: [] }}
+          change={(criteria) => change({ ...current, criteria })}
+        />
+      )}
       <fieldset>
         <legend>Copy values to this table</legend>
         <p>
