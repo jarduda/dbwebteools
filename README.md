@@ -103,6 +103,8 @@ List settings and joins are stored in existing layout JSON. No schema migration 
 
 ## Dates, timestamps, and dropdowns
 
+All record searches (data browser, related lists, and lookup windows) wait **500 ms after the last keystroke** before querying. Each input change resets the timer; clearing the input follows the same delay.
+
 Record search matches configured dropdown display labels using case-insensitive partial text, as well as stored keys and other text columns. Label matches respect layout filters, sorting, and pagination; stored values are unchanged.
 
 In **Administration → Editor layouts**, use these controls:

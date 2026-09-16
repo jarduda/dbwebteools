@@ -1,3 +1,4 @@
+import { expectDebouncedSearch } from "./search-debounce";
 import { test, expect } from "@playwright/test";
 test("desktop and mobile workspace with administration", async ({ page }) => {
   const errors: string[] = [];
@@ -88,6 +89,13 @@ test("browse, create, edit and delete MariaDB records", async ({ page }) => {
   await expect(page.getByRole("dialog")).toHaveCount(0);
   const row = page.getByRole("row").filter({ hasText: "Browser CRUD test" });
   await expect(row).toBeVisible();
+  await expectDebouncedSearch(
+    page,
+    page.getByLabel("Search records", { exact: true }),
+    /\/tables\/browser_records\/records$/,
+    "Browser",
+  );
+
   await row.getByRole("button", { name: /Edit record/ }).click();
   await page
     .getByRole("dialog")

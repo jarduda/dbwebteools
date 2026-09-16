@@ -1,3 +1,4 @@
+import { expectDebouncedSearch } from "./search-debounce";
 import { test, expect } from "@playwright/test";
 
 test("define pages and drill through related tabs with record keys and browser history", async ({
@@ -355,6 +356,12 @@ test("define pages and drill through related tabs with record keys and browser h
   expect(
     (await panel.getByLabel("Search Orders", { exact: true }).boundingBox())!.x,
   ).toBeLessThan(relatedAddSize!.x);
+  await expectDebouncedSearch(
+    page,
+    panel.getByLabel("Search Orders", { exact: true }),
+    /\/tabs\/[^/]+\/records$/,
+    "Alice",
+  );
   // Preserve the list, search focus and scroll position during delayed/in-flight searches.
   await page.setViewportSize({ width: 390, height: 844 });
   const search = panel.getByLabel("Search Orders", { exact: true });
