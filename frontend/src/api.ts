@@ -43,6 +43,7 @@ export type Connection = {
   verifyTls?: boolean;
 };
 export type Column = {
+  canWrite?: boolean;
   name: string;
   type: string;
   nullable: boolean;
@@ -52,6 +53,7 @@ export type Column = {
   default: string | null;
 };
 export type Row = {
+  keyToken?: string | null;
   values: Record<string, unknown>;
   version: string;
   displayValues?: Record<string, string | null>;
@@ -59,6 +61,7 @@ export type Row = {
   calculationErrors?: Record<string, string>;
 };
 export type Page = {
+  hasPrimaryKey?: boolean;
   total: number;
   page: number;
   size: number;
@@ -93,6 +96,7 @@ export type Field = {
   formula?: string | null;
 };
 export type Grant = {
+  fields?: Record<string, "none" | "read" | "write"> | null;
   userId: number;
   connectionId: number;
   table: string;

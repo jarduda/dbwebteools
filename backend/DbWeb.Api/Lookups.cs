@@ -137,7 +137,9 @@ public partial class DatabaseService
             size,
             columns = names,
             numericColumns = schema
-                .Where(c => Sumups.Numeric(c.Type) || c.Type is "bit" or "year")
+                .Where(c =>
+                    names.Contains(c.Name) && (Sumups.Numeric(c.Type) || c.Type is "bit" or "year")
+                )
                 .Select(c => c.Name),
             rows = await Read(cmd),
         };

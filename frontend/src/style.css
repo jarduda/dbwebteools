@@ -1196,3 +1196,19 @@ input[aria-readonly="true"] {
 .lookup-config > .list-view-editor {
   grid-column: 1 / -1;
 }
+
+.field-access {
+  margin: 24px 0;
+}
+.field-access .actions {
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+.field-access select {
+  min-width: 130px;
+}
+.field-name {
+  display: block;
+  color: var(--muted);
+  margin-top: 4px;
+}

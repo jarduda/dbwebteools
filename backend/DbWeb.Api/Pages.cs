@@ -420,7 +420,12 @@ public static class PageEndpoints
             {
                 var result = new List<object>();
                 foreach (var page in await db.Pages.OrderBy(p => p.Name).ToListAsync())
-                    if (await CanRead(db, ctx, page.ConnectionId, page.Table))
+                    if (
+                        await CanRead(db, ctx, page.ConnectionId, page.Table)
+                        && (await FieldAccess.For(db, ctx, page.ConnectionId, page.Table)).Read(
+                            page.LinkColumn
+                        )
+                    )
                         result.Add(
                             new
                             {
@@ -443,21 +448,51 @@ public static class PageEndpoints
                 var config = await Access(db, ctx, page.ConnectionId, page.Table, "read");
                 await using var c = await service.Open(config);
                 await Sumups.RepairIfPending(db, service, c, page.ConnectionId);
+                key = await FieldAccess.DecodePageKey(db, ctx, page.ConnectionId, page.Table, key);
                 var records = await service.PageRecord(c, page.Table, key);
                 var layout = await Layout(db, page.ConnectionId, page.Table);
                 await RecordPresentation.Decorate(
                     db,
                     ctx,
                     page.ConnectionId,
+                    page.Table,
                     c,
                     service,
                     layout.Fields,
                     records
                 );
                 var tabs = new List<RelatedTab>();
+                var mainAccess = await FieldAccess.For(db, ctx, page.ConnectionId, page.Table);
                 foreach (var tab in Definition(page).Tabs)
                     if (await CanRead(db, ctx, page.ConnectionId, tab.Table))
-                        tabs.Add(tab);
+                    {
+                        var childAccess = await FieldAccess.For(
+                            db,
+                            ctx,
+                            page.ConnectionId,
+                            tab.Table
+                        );
+                        tabs.Add(
+                            tab with
+                            {
+                                Columns = tab.Columns.Where(childAccess.Read).ToList(),
+                                ParentColumn = mainAccess.Read(tab.ParentColumn)
+                                    ? tab.ParentColumn
+                                    : "",
+                                RelatedColumn = childAccess.Read(tab.RelatedColumn)
+                                    ? tab.RelatedColumn
+                                    : "",
+                                LookupField =
+                                    tab.LookupField != null && childAccess.Read(tab.LookupField)
+                                        ? tab.LookupField
+                                        : null,
+                                LinkColumn =
+                                    tab.LinkColumn != null && childAccess.Read(tab.LinkColumn)
+                                        ? tab.LinkColumn
+                                        : null,
+                            }
+                        );
+                    }
                 var uid = int.Parse(ctx.User.FindFirstValue(ClaimTypes.NameIdentifier)!);
                 var canUpdate =
                     ctx.User.IsInRole("Admin")
@@ -473,11 +508,25 @@ public static class PageEndpoints
                     page = Definition(page) with
                     {
                         Tabs = tabs,
+                        LinkColumn = mainAccess.Read(page.LinkColumn) ? page.LinkColumn : "",
                     },
                     record = records.Rows[0],
                     columns = records.Columns.Concat(records.JoinedColumns),
-                    fields = layout.Fields,
-                    canUpdate,
+                    fields = await FieldAccess.VisibleFields(
+                        db,
+                        ctx,
+                        page.ConnectionId,
+                        page.Table,
+                        layout.Fields,
+                        await service.Columns(c, page.Table)
+                    ),
+                    canUpdate = canUpdate
+                        && records.Columns.Any(col =>
+                            col.CanWrite != false
+                            && !col.Generated
+                            && !col.AutoIncrement
+                            && !col.PrimaryKey
+                        ),
                 };
             }
         );
@@ -515,11 +564,36 @@ public static class PageEndpoints
                     throw new ApiError(400, "Search is limited to 200 characters.");
                 await using var c = await service.Open(config);
                 await Sumups.RepairIfPending(db, service, c, configPage.ConnectionId);
+                key = await FieldAccess.DecodePageKey(
+                    db,
+                    ctx,
+                    configPage.ConnectionId,
+                    configPage.Table,
+                    key
+                );
                 var parent = await service.PageRecord(c, configPage.Table, key);
                 if (!parent.Columns.Any(col => col.Name == tab.ParentColumn))
                     throw new ApiError(400, "Parent relationship column no longer exists.");
                 var value = parent.Rows[0].Values.GetValueOrDefault(tab.ParentColumn);
                 var layout = await Layout(db, configPage.ConnectionId, tab.Table);
+                var access = await FieldAccess.For(db, ctx, configPage.ConnectionId, tab.Table);
+                var childColumns = await service.Columns(c, tab.Table);
+                var safeFields = await FieldAccess.VisibleFields(
+                    db,
+                    ctx,
+                    configPage.ConnectionId,
+                    tab.Table,
+                    layout.Fields,
+                    childColumns
+                );
+                var blocked = layout
+                    .Fields.Where(f => !safeFields.Any(v => v.Name == f.Name))
+                    .Select(f => f.Name)
+                    .ToHashSet();
+                var readable = childColumns
+                    .Where(col => access.Read(col.Name) && !blocked.Contains(col.Name))
+                    .Select(col => col.Name)
+                    .ToHashSet();
                 var result = await service.List(
                     c,
                     tab.Table,
@@ -531,12 +605,14 @@ public static class PageEndpoints
                     layout.View,
                     layout.Fields,
                     new ListFilter(tab.RelatedColumn, "eq", DatabaseService.KeyText(value)),
-                    value == null
+                    value == null,
+                    readable
                 );
                 await RecordPresentation.Decorate(
                     db,
                     ctx,
                     configPage.ConnectionId,
+                    tab.Table,
                     c,
                     service,
                     layout.Fields,
@@ -549,21 +625,29 @@ public static class PageEndpoints
                 return new
                 {
                     connectionId = configPage.ConnectionId,
-                    canUpdate = result.Columns.Any(col => col.PrimaryKey)
+                    canUpdate = result.HasPrimaryKey
+                        && result.Columns.Any(col =>
+                            col.CanWrite != false
+                            && !col.PrimaryKey
+                            && !col.Generated
+                            && !col.AutoIncrement
+                        )
                         && await CanUpdate(db, ctx, configPage.ConnectionId, tab.Table),
-                    lockedFields = new[] { tab.RelatedColumn },
+                    lockedFields = new[] { tab.RelatedColumn }.Where(access.Read),
                     canCreate = !string.IsNullOrEmpty(tab.LookupField)
                         && value != null
-                        && result.Columns.Any(col => col.PrimaryKey)
-                        && result.Columns.Any(col =>
+                        && result.HasPrimaryKey
+                        && childColumns.Any(col =>
                             col.Name == tab.RelatedColumn && !col.AutoIncrement && !col.Generated
                         )
                         && await CanCreate(db, ctx, configPage.ConnectionId, tab.Table),
                     data = result,
-                    fields = layout.Fields,
+                    fields = safeFields,
                     visibleColumns = tab.Columns.Where(available.Contains),
                     targetPageId = tab.TargetPageId,
-                    linkColumn = tab.LinkColumn,
+                    linkColumn = tab.LinkColumn != null && available.Contains(tab.LinkColumn)
+                        ? tab.LinkColumn
+                        : null,
                 };
             }
         );
@@ -591,6 +675,24 @@ public static class PageEndpoints
                 tab = await ResolveTab(db, page.ConnectionId, page.Table, tab);
                 if (input.Mutation?.Values == null)
                     throw new ApiError(400, "Record values required.");
+                input = input with
+                {
+                    ParentKey = await FieldAccess.DecodePageKey(
+                        db,
+                        ctx,
+                        page.ConnectionId,
+                        page.Table,
+                        input.ParentKey
+                    ),
+                    Mutation = await FieldAccess.DecodeMutation(
+                        db,
+                        ctx,
+                        page.ConnectionId,
+                        tab.Table,
+                        input.Mutation,
+                        "update"
+                    ),
+                };
                 if (input.Mutation.Values.ContainsKey(tab.RelatedColumn))
                     throw new ApiError(400, "The parent relation is locked in this related list.");
                 var fields = await RecordWrites.Validate(
@@ -702,6 +804,19 @@ public static class PageEndpoints
                             throw new ApiError(400, "The parent's lookup key is empty.");
                         return JsonSerializer.SerializeToElement(value);
                     }
+                    input = input with
+                    {
+                        Key = await FieldAccess.DecodePageKey(
+                            db,
+                            ctx,
+                            page.ConnectionId,
+                            page.Table,
+                            input.Key
+                        ),
+                    };
+                    var access = await FieldAccess.For(db, ctx, page.ConnectionId, tab.Table);
+                    if (!isPreview)
+                        access.RequireWrite((input.Values ?? []).Keys);
                     var key = await ParentKey();
                     var values = new Dictionary<string, JsonElement>(input.Values ?? []);
                     // Parent context is authoritative; ignore any submitted replacement key.
@@ -721,13 +836,21 @@ public static class PageEndpoints
                             .Select(m => m.DestinationColumn)
                             .Append(field.Name)
                             .ToList();
+                        var safeFields = await FieldAccess.VisibleFields(
+                            db,
+                            ctx,
+                            page.ConnectionId,
+                            tab.Table,
+                            layout.Fields,
+                            columns
+                        );
                         var virtualColumns = await RecordPresentation.PopulateJoins(
                             db,
                             ctx,
                             page.ConnectionId,
                             c,
                             service,
-                            layout.Fields,
+                            safeFields,
                             columns,
                             []
                         );
@@ -736,10 +859,13 @@ public static class PageEndpoints
                             {
                                 connectionId = page.ConnectionId,
                                 table = tab.Table,
-                                columns = columns.Concat(virtualColumns),
-                                fields = layout.Fields,
-                                values = defaults,
-                                lockedFields = locked,
+                                columns = columns
+                                    .Where(col => access.Read(col.Name))
+                                    .Select(access.Column)
+                                    .Concat(virtualColumns),
+                                fields = safeFields,
+                                values = defaults.Where(v => access.Read(v.Key)).ToDictionary(),
+                                lockedFields = locked.Where(access.Read),
                             }
                         );
                     }

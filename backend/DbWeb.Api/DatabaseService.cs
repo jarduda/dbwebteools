@@ -15,7 +15,8 @@ public record ColumnInfo(
     bool PrimaryKey,
     bool Generated,
     bool AutoIncrement,
-    string? Default
+    string? Default,
+    bool? CanWrite = null
 );
 
 public partial class DatabaseService(IDataProtectionProvider protection)
@@ -139,10 +140,15 @@ public partial class DatabaseService(IDataProtectionProvider protection)
         ListView? view = null,
         List<LayoutField>? fields = null,
         ListFilter? relation = null,
-        bool emptyRelation = false
+        bool emptyRelation = false,
+        HashSet<string>? readable = null
     )
     {
         var cols = await Columns(db, table);
+        if (!string.IsNullOrEmpty(sort) && readable != null && !readable.Contains(sort))
+            throw new ApiError(403, "You cannot sort by a restricted field.");
+        if (readable != null && !string.IsNullOrEmpty(view?.Sort) && !readable.Contains(view.Sort))
+            view = view with { Sort = null };
         page = Math.Max(1, page);
         size = Math.Clamp(size, 1, 100);
         if (string.IsNullOrEmpty(sort))
@@ -150,14 +156,26 @@ public partial class DatabaseService(IDataProtectionProvider protection)
             sort = string.IsNullOrEmpty(view?.Sort) ? null : view.Sort;
             descending = view?.Descending ?? descending;
         }
-        sort ??= cols.FirstOrDefault(x => x.PrimaryKey)?.Name ?? cols[0].Name;
+        sort ??=
+            cols.FirstOrDefault(x =>
+                (readable == null || readable.Contains(x.Name)) && x.PrimaryKey
+            )?.Name
+            ?? cols.FirstOrDefault(x => readable == null || readable.Contains(x.Name))?.Name
+            ?? cols[0].Name;
         if (!cols.Any(x => x.Name == sort))
             throw new ApiError(400, "Unknown sort column.");
         await using var cmd = db.CreateCommand();
         var searchable = cols.Where(x =>
-                new[] { "varchar", "char", "tinytext", "text", "mediumtext", "longtext" }.Contains(
-                    x.Type
-                )
+                (readable == null || readable.Contains(x.Name))
+                && new[]
+                {
+                    "varchar",
+                    "char",
+                    "tinytext",
+                    "text",
+                    "mediumtext",
+                    "longtext",
+                }.Contains(x.Type)
             )
             .ToList();
         var predicates = new List<string>();
@@ -205,6 +223,8 @@ public partial class DatabaseService(IDataProtectionProvider protection)
             predicates.Add("(" + string.Join(" OR ", matches) + ")");
             cmd.Parameters.AddWithValue("@search", "%" + search + "%");
         }
+        if (!string.IsNullOrEmpty(search) && searchable.Count == 0)
+            predicates.Add("1=0");
         var where = predicates.Count == 0 ? "" : " WHERE " + string.Join(" AND ", predicates);
         var order = $"{Quote(sort)} {(descending ? "DESC" : "ASC")}";
         foreach (var key in cols.Where(c => c.PrimaryKey && c.Name != sort))
@@ -218,7 +238,8 @@ public partial class DatabaseService(IDataProtectionProvider protection)
         var rows = await Read(cmd);
         return new(total, page, size, cols, rows.Select(x => new RecordRow(x, Version(x))).ToList())
         {
-            Sort = sort,
+            Sort = readable == null || readable.Contains(sort) ? sort : null,
+            HasPrimaryKey = cols.Any(c => c.PrimaryKey),
             Descending = descending,
         };
     }

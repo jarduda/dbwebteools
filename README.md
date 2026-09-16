@@ -8,7 +8,7 @@ A responsive MariaDB record-management workspace with a separate **ASP.NET Core 
 - Create, update, and delete with parameterized values, schema-validated identifiers, composite primary keys, and optimistic concurrency checks.
 - Users, administrator/member roles, disable accounts, reset passwords, and revoke active sessions on account changes.
 - Multiple database connections with encrypted passwords, connection testing, verified TLS by default.
-- Deny-by-default per-user, per-table read/create/update/delete permissions enforced by the API.
+- Deny-by-default table permissions plus per-user field-level No access / Read / Write, enforced by the API.
 - Visual editing layouts: field labels, sections, order, Date/DateTime controls, keyed text dropdowns, hidden/read-only fields.
 - Configurable related-table lookups: searchable selection dialogs, friendly labels, and key-only storage.
 - Recent record-change activity without recording sensitive field values.
@@ -43,6 +43,22 @@ npm run dev
 ```
 
 Open the Vite URL. Vite proxies `/api` to port 5188, so browser API access stays same-origin. There is intentionally no permissive CORS policy.
+
+## Table and field access
+
+Open **Administration → Table access**, choose a connection, table and user, then configure table operations and **Field access**:
+
+- **No access**: field values are omitted from API responses, schema, forms and lists. Searches and user-selected sorting cannot use the field.
+- **Read**: the field can be viewed but not submitted in creates or updates.
+- **Write**: the field can be viewed and submitted, subject to table create/update permissions and existing generated/read-only/computed constraints.
+
+Use **All fields: No access**, **All fields: Read**, or **All fields: Write** to set every field in one click, adjust exceptions, then **Save permissions**. Administrators retain full access. Existing table grants without a field policy keep their previous behavior. Saving creates an explicit policy; newly added or unspecified fields then default to No access. Older grant API requests that omit `fields` preserve the existing field policy rather than removing it.
+
+Rules are checked on every API request, including record pages and related tabs. Formula/dropdown-display, joined and sum-up fields are suppressed when their required source fields are unreadable. Lookup key/display fields require target read access; inaccessible extra search columns are excluded. Lookup copies require read access to source fields and write access to destination fields. Trusted server-managed defaults, parent context and aggregate maintenance remain automatic; they are not a way to submit forbidden field values. Fixed administrator-defined view/relationship filters may still constrain records internally.
+
+Restricted primary keys are not exposed: record responses provide a user/connection/table-bound `keyToken`, used as `key: { "$record": token }` for updates/deletes and page links. Return the response's opaque `version` unchanged for concurrency checks. Restricted record links are specific to the authorized user, not shareable credentials. No-access fields are removed before serialization; this is separate from layout visibility.
+
+Field policies are stored in SQLite **FieldPolicies**, keyed by user/connection/table. Startup adds this table/index idempotently without changing existing users, grants, layouts or target MariaDB schemas. Back up the full application database and encryption keys together.
 
 ## Related-table lookups
 
@@ -147,7 +163,7 @@ Normal TableSpace create/update/delete operations apply only the changed child's
 
 Rebuilds scan child contributions once per aggregate and stream them, rather than issuing a child scan for every parent. Regular child edits do **not** scan the full child set. Formula errors, overflow, invalid mappings, and insufficient destination scale fail the operation and roll back its data changes. Use `Round(...)` in the child formula when deliberate rounding is needed; implicit per-edit rounding is rejected to prevent total drift. Destinations support exact integers/DECIMAL with up to 28 digits, matching the backend decimal formula engine; FLOAT/DOUBLE destinations and aggregate-on-aggregate formula dependencies are not supported. Parent and child tables must use InnoDB (MariaDB 10.5+).
 
-Automatic maintenance covers writes through **the same configured TableSpace connection**, including normal and page-related creation endpoints. Direct SQL, other applications, and database-trigger/cascade side effects are not change-captured; run full recalculation after those changes. Configure and write through a single connection for a given aggregate relationship. Stored totals follow parent-table read permissions; child writers do not need parent update permission to maintain backend-managed totals. They cannot submit aggregate values directly.
+Automatic maintenance covers writes through **the same configured TableSpace connection**, including normal and page-related creation endpoints. Direct SQL, other applications, and database-trigger/cascade side effects are not change-captured; run full recalculation after those changes. Configure and write through a single connection for a given aggregate relationship. Stored totals follow parent-field read permissions and require access to their child relation/source dependencies; child writers do not need parent update permission to maintain backend-managed totals. They cannot submit aggregate values directly.
 
 Definitions remain in layout JSON; no MariaDB triggers or auxiliary tables are installed. A durable pending-rebuild marker protects the SQLite/MariaDB configuration handoff: an interrupted backfill is repaired before subsequent record reads or writes. Existing layout/page configurations are preserved until edited.
 
@@ -211,7 +227,7 @@ Authentication uses PBKDF2 password hashing through ASP.NET Core PasswordHasher,
 
 Table names and column identifiers are validated against `information_schema` and safely quoted. Values are parameters. Updates/deletes require the full primary key and a record version checked inside a transaction with `SELECT ... FOR UPDATE`. Tables without primary keys are read-only; views are not exposed. Large integer and decimal values are transported as strings to preserve precision; binary values use base64. Defaulted fields omitted from create requests retain their database default.
 
-Layouts are presentation settings, **not column-level security**. Table grants protect all columns in a table. MariaDB transactional tables (InnoDB) are required for reliable concurrency guarantees. Foreign keys and database constraints are enforced by MariaDB; schema editing and file attachments are outside this release. Application metadata currently uses a single SQLite instance; scale the application as a single replica. The Pages schema is installed with an additive idempotent upgrade; future schema changes must preserve existing metadata. The activity log and target database are separate stores, not a distributed atomic audit ledger.
+Layouts are presentation settings, **not column-level security**. Use **Table access → Field access** for column-level security in addition to table grants. MariaDB transactional tables (InnoDB) are required for reliable concurrency guarantees. Foreign keys and database constraints are enforced by MariaDB; schema editing and file attachments are outside this release. Application metadata currently uses a single SQLite instance; scale the application as a single replica. The Pages schema is installed with an additive idempotent upgrade; future schema changes must preserve existing metadata. The activity log and target database are separate stores, not a distributed atomic audit ledger.
 
 ## CI/CD and contributing
 
