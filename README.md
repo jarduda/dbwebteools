@@ -50,11 +50,23 @@ Open the Vite URL. Vite proxies `/api` to port 5188, so browser API access stays
 2. In its relation configuration, select the **Related table**, **Stored key**, **Display value**, and optional **Additional search columns**. Save the layout.
 3. In the record editor, click **Choose…** to open the record-selection window. Search matches the key, display column, and selected extra columns. Select a row to populate the relation; only its key is saved to MariaDB.
 
+Each lookup has **Lookup selection criteria** in its relation configuration. Add up to 20 typed conditions on the lookup table and choose **All criteria (AND)** or **Any criterion (OR)**. Text, numeric, date/time and NULL conditions reuse the list filter controls. Criteria are combined with key/display/extra-column search before both pagination and counting. New selections, copy previews and writes must match the criteria; writes recheck within their transaction. Existing selections still resolve their friendly label and unrelated edits do not require reselecting them. These are selection rules, not table-read permissions: they do not hide existing related records, change page-tab membership, or alter sum-up membership. Changing a lookup table clears its old criteria.
+
 For example, configure `orders.customer_id` to look up `customers.id`, display `customers.name`, and search `customers.email`. The grid and editor show the customer's name; the editor also shows the stored key for disambiguation. Existing relations resolve automatically. Cancel leaves the original selection intact; **Clear** stores NULL for nullable columns. Results are paginated and searchable, and large integer keys retain their exact precision.
 
 Lookups target tables in the **same configured database connection** and require a non-null **single-column primary or unique key** with a compatible source type. Composite-key lookups and multi-column relation mappings are not supported. Existing composite-key CRUD is unchanged. Configuration is stored in existing layout JSON; no application-data migration is required.
 
 Users need **read permission on both source and related tables** to search or resolve related values, plus the usual source create/update permission to save. Without target read access, the grid retains the source key but never exposes related values. Invalid or missing selections are rejected by the API. Layouts do not create or alter database foreign-key constraints: keep actual foreign keys for transactional referential integrity, including changes made outside this application. Search treats `%` and `_` literally; it never executes user SQL.
+
+## Creation defaults
+
+Under **Administration → Editor layouts**, use each stored field's **Creation default** control:
+
+- **Database default**: no layout override; omitted values use the existing database behavior.
+- **Value**: a literal text, number, checkbox, date/date-time, dropdown key, or lookup key. Dropdown controls offer friendly labels while storing their keys.
+- **NULL**: explicit NULL for nullable, non-required fields.
+
+Save the layout to activate defaults for new records only. Defaults appear when opening **Add record**, including in related tabs. Backend creation also fills omitted values for API clients; explicit values (including NULL or empty text), locked parent context, and lookup-copy results take precedence. Lookup defaults populate their copy mappings and require access to a matching source record. Existing records and database schema/defaults are unchanged. Generated, formula, joined and sum-up fields cannot have creation defaults. Defaults are literal values, not SQL or formula expressions. Standard required/dropdown/database constraints still apply; if a default lookup stops qualifying, revise the layout default or provide another valid key.
 
 ## List fields and read-only joined fields
 

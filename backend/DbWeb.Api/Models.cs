@@ -59,7 +59,8 @@ public record LayoutField(
     JoinConfig? Join = null,
     bool Required = false,
     string? Formula = null,
-    SumupConfig? Sumup = null
+    SumupConfig? Sumup = null,
+    CreationDefault? CreationDefault = null
 );
 
 public class AuditEntry
@@ -133,7 +134,8 @@ public record LookupConfig(
     string KeyColumn,
     string DisplayColumn,
     List<string> SearchColumns,
-    List<LookupCopyMapping>? CopyMappings = null
+    List<LookupCopyMapping>? CopyMappings = null,
+    ListView? Criteria = null
 );
 
 public record LookupCopyMapping(string SourceColumn, string DestinationColumn);

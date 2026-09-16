@@ -7,6 +7,38 @@ namespace DbWeb.Api;
 
 public static class RecordWrites
 {
+    public static async Task<Dictionary<string, JsonElement>> Preview(
+        AppDb db,
+        HttpContext ctx,
+        int id,
+        string table,
+        DatabaseService service,
+        MySqlConnection c,
+        Dictionary<string, JsonElement>? initial = null
+    )
+    {
+        var values = new Dictionary<string, JsonElement>(initial ?? []);
+        var fields = await Validate(
+            db,
+            ctx,
+            id,
+            table,
+            new RowMutation(values, null, null),
+            "create",
+            service,
+            c
+        );
+        await service.ValidateCopyMappings(c, fields, await service.Columns(c, table));
+        foreach (
+            var field in fields.Where(f =>
+                f.Widget == "lookup" && f.Lookup != null && values.ContainsKey(f.Name)
+            )
+        )
+        foreach (var copied in await service.CopyLookupValues(c, field.Lookup!, values[field.Name]))
+            values[copied.Key] = copied.Value;
+        return values;
+    }
+
     public static async Task<List<LayoutField>> Validate(
         AppDb db,
         HttpContext ctx,
@@ -25,6 +57,12 @@ public static class RecordWrites
                 x.ConnectionId == id && x.Table == table
             );
             fields = DatabaseService.LayoutFields(layout?.FieldsJson);
+            if (op == "create")
+                DatabaseService.ApplyCreationDefaults(
+                    fields,
+                    await s.Columns(c, table),
+                    input.Values
+                );
             if (
                 fields.Any(f =>
                     (f.Widget is "join" or "formula") && input.Values.ContainsKey(f.Name)
@@ -52,13 +90,7 @@ public static class RecordWrites
                     continue;
                 if (key.ValueKind is not JsonValueKind.Number and not JsonValueKind.String)
                     throw new ApiError(400, "Lookup keys must be strings or numbers.");
-                var labels = await s.LookupLabels(
-                    c,
-                    field.Lookup,
-                    new object?[] { key.ToString() }
-                );
-                if (!labels.ContainsKey(key.ToString()))
-                    throw new ApiError(400, $"Select an existing related record for {field.Name}.");
+                await s.CopyLookupValues(c, field.Lookup, key);
             }
         }
 

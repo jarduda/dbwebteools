@@ -95,12 +95,16 @@ public partial class DatabaseService
         await using var cmd = db.CreateCommand();
         cmd.Transaction = transaction;
         var names = mappings.Select(m => m.SourceColumn).Append(lookup.KeyColumn).Distinct();
+        var columns = await Columns(db, lookup.Table, transaction);
+        var criteria = ViewPredicate(cmd, lookup.Criteria, columns);
         cmd.CommandText =
-            $"SELECT {string.Join(",", names.Select(Quote))} FROM {Quote(lookup.Table)} WHERE {Quote(lookup.KeyColumn)}=@key";
+            $"SELECT {string.Join(",", names.Select(Quote))} FROM {Quote(lookup.Table)} WHERE {Quote(lookup.KeyColumn)}=@key"
+            + (criteria.Length == 0 ? "" : " AND " + criteria)
+            + (transaction == null ? "" : " LOCK IN SHARE MODE");
         cmd.Parameters.AddWithValue("@key", key.ToString());
         var rows = await Read(cmd);
         if (rows.Count != 1)
-            throw new ApiError(400, "Select an existing related record.");
+            throw new ApiError(400, "Select a related record that matches the lookup criteria.");
         return mappings.ToDictionary(
             m => m.DestinationColumn,
             m => JsonSerializer.SerializeToElement(rows[0][m.SourceColumn])

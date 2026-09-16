@@ -544,6 +544,7 @@ admin.MapPut(
                         col.Name.Equals(field.Name, StringComparison.OrdinalIgnoreCase)
                     )
                     || field.Required
+                    || field.CreationDefault != null
                     || !field.ReadOnly
                     || field.Lookup != null
                     || field.Options is { Count: > 0 }
@@ -585,6 +586,7 @@ admin.MapPut(
                 throw new ApiError(400, "Only lookup controls may have lookup configuration.");
         }
         await s.ValidateCopyMappings(c, fields, cols);
+        await s.ValidateCreationDefaults(c, fields, cols);
         var l = await db.Layouts.SingleOrDefaultAsync(x =>
             x.ConnectionId == id && x.Table == table
         );
@@ -729,6 +731,15 @@ api.MapPost(
             columns = joinedColumns,
             calculationErrors = row.CalculationErrors,
         };
+    }
+);
+api.MapPost(
+    "/{id:int}/tables/{table}/create-preview",
+    async (int id, string table, AppDb db, DatabaseService service, HttpContext ctx) =>
+    {
+        var config = await Access(db, ctx, id, table, "create");
+        await using var c = await service.Open(config);
+        return new { values = await RecordWrites.Preview(db, ctx, id, table, service, c) };
     }
 );
 foreach (var operation in new[] { "create", "update", "delete" })

@@ -1187,3 +1187,12 @@ input[aria-readonly="true"] {
 .formula-validation {
   margin-bottom: 12px;
 }
+
+.creation-default {
+  min-width: 170px;
+  display: grid;
+  gap: 6px;
+}
+.lookup-config > .list-view-editor {
+  grid-column: 1 / -1;
+}

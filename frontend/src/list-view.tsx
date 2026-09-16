@@ -72,8 +72,12 @@ export function ListViewEditor({
   columns,
   fields,
   change,
+  filtersOnly = false,
+  name = "List configuration",
 }: {
   value: ListView;
+  filtersOnly?: boolean;
+  name?: string;
   columns: Column[];
   fields: Field[];
   change: (view: ListView) => void;
@@ -87,60 +91,74 @@ export function ListViewEditor({
       filters: filters.map((f, j) => (i === j ? { ...f, ...patch } : f)),
     });
   return (
-    <section className="list-view-editor" aria-label="List configuration">
-      <h3>List title, default sorting & filters</h3>
-      <div className="list-view-settings">
-        <label>
-          List title
-          <input
-            aria-label="List title"
-            maxLength={150}
-            placeholder="Use table name"
-            value={value.label || ""}
-            onChange={(e) => change({ ...value, label: e.target.value })}
-          />
-        </label>
-        <label>
-          Default sort column
-          <select
-            aria-label="Default sort column"
-            value={value.sort || ""}
-            onChange={(e) =>
-              change({
-                ...value,
-                sort: e.target.value,
-                descending: e.target.value ? value.descending : false,
-              })
-            }
-          >
-            <option value="">Primary key (automatic)</option>
-            {columns.map((c) => (
-              <option key={c.name} value={c.name}>
-                {label(c.name)} ({c.name})
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          Sort direction
-          <select
-            aria-label="Sort direction"
-            disabled={!value.sort}
-            value={value.descending ? "desc" : "asc"}
-            onChange={(e) =>
-              change({ ...value, descending: e.target.value === "desc" })
-            }
-          >
-            <option value="asc">Ascending</option>
-            <option value="desc">Descending</option>
-          </select>
-        </label>
-      </div>
-      <p>
-        Field labels below are used in record forms and list headings. Filters
-        apply to the list and its search results, not to table permissions or
-        lookup choices.
-      </p>
+    <section className="list-view-editor" aria-label={name}>
+      <h3>
+        {filtersOnly
+          ? "Lookup selection criteria"
+          : "List title, default sorting & filters"}
+      </h3>
+      {!filtersOnly && (
+        <>
+          <div className="list-view-settings">
+            <label>
+              List title
+              <input
+                aria-label="List title"
+                maxLength={150}
+                placeholder="Use table name"
+                value={value.label || ""}
+                onChange={(e) => change({ ...value, label: e.target.value })}
+              />
+            </label>
+            <label>
+              Default sort column
+              <select
+                aria-label="Default sort column"
+                value={value.sort || ""}
+                onChange={(e) =>
+                  change({
+                    ...value,
+                    sort: e.target.value,
+                    descending: e.target.value ? value.descending : false,
+                  })
+                }
+              >
+                <option value="">Primary key (automatic)</option>
+                {columns.map((c) => (
+                  <option key={c.name} value={c.name}>
+                    {label(c.name)} ({c.name})
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Sort direction
+              <select
+                aria-label="Sort direction"
+                disabled={!value.sort}
+                value={value.descending ? "desc" : "asc"}
+                onChange={(e) =>
+                  change({ ...value, descending: e.target.value === "desc" })
+                }
+              >
+                <option value="asc">Ascending</option>
+                <option value="desc">Descending</option>
+              </select>
+            </label>
+          </div>
+          <p>
+            Field labels below are used in record forms and list headings.
+            Filters apply to the list and its search results, not to table
+            permissions or lookup choices.
+          </p>
+        </>
+      )}
+      {filtersOnly && (
+        <p>
+          Only matching records can be selected. Criteria apply together with
+          search and pagination. Existing relations keep their display labels.
+        </p>
+      )}
       <label className="filter-match">
         Show records matching
         <select

@@ -708,8 +708,19 @@ public static class PageEndpoints
                     values[field.Name] = key;
                     if (isPreview)
                     {
-                        var defaults = await service.CopyLookupValues(c, field.Lookup!, key);
-                        defaults[field.Name] = key;
+                        var defaults = await RecordWrites.Preview(
+                            db,
+                            ctx,
+                            page.ConnectionId,
+                            tab.Table,
+                            service,
+                            c,
+                            new() { [field.Name] = key }
+                        );
+                        var locked = (field.Lookup!.CopyMappings ?? [])
+                            .Select(m => m.DestinationColumn)
+                            .Append(field.Name)
+                            .ToList();
                         var virtualColumns = await RecordPresentation.PopulateJoins(
                             db,
                             ctx,
@@ -728,7 +739,7 @@ public static class PageEndpoints
                                 columns = columns.Concat(virtualColumns),
                                 fields = layout.Fields,
                                 values = defaults,
-                                lockedFields = defaults.Keys.ToList(),
+                                lockedFields = locked,
                             }
                         );
                     }

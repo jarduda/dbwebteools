@@ -73,6 +73,8 @@ public partial class DatabaseService
                 400,
                 "Lookup source must be writable and have a compatible key type."
             );
+        using var criteriaCommand = new MySqlCommand();
+        ViewPredicate(criteriaCommand, lookup.Criteria, columns);
         return columns;
     }
 
@@ -102,20 +104,26 @@ public partial class DatabaseService
         if (search?.Length > 200)
             throw new ApiError(400, "Search is limited to 200 characters.");
         await using var cmd = db.CreateCommand();
-        var where = "";
+        var predicates = new List<string>();
+        var criteria = ViewPredicate(cmd, lookup.Criteria, schema);
+        if (criteria.Length > 0)
+            predicates.Add(criteria);
         if (!string.IsNullOrEmpty(search))
         {
-            where =
-                " WHERE "
-                + string.Join(
-                    " OR ",
-                    names.Select(n => $"CAST({Quote(n)} AS CHAR) LIKE @search ESCAPE '!'")
-                );
+            predicates.Add(
+                "("
+                    + string.Join(
+                        " OR ",
+                        names.Select(n => $"CAST({Quote(n)} AS CHAR) LIKE @search ESCAPE '!'")
+                    )
+                    + ")"
+            );
             cmd.Parameters.AddWithValue(
                 "@search",
                 "%" + search.Replace("!", "!!").Replace("%", "!%").Replace("_", "!_") + "%"
             );
         }
+        var where = predicates.Count == 0 ? "" : " WHERE " + string.Join(" AND ", predicates);
         cmd.CommandText = $"SELECT COUNT(*) FROM {Quote(lookup.Table)}{where}";
         var total = Convert.ToInt64(await cmd.ExecuteScalarAsync());
         cmd.CommandText =
