@@ -68,7 +68,14 @@ export type Page = {
   sort?: string;
   descending?: boolean;
 };
+export type Sumup = {
+  operation: "sum" | "count";
+  childTable: string;
+  lookupField: string;
+  sourceField?: string | null;
+};
 export type Field = {
+  sumup?: Sumup | null;
   name: string;
   label: string;
   section: string;

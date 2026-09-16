@@ -58,7 +58,8 @@ public record LayoutField(
     int? ListOrder = null,
     JoinConfig? Join = null,
     bool Required = false,
-    string? Formula = null
+    string? Formula = null,
+    SumupConfig? Sumup = null
 );
 
 public class AuditEntry

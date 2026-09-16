@@ -400,6 +400,7 @@ public static class PageEndpoints
                     await db.Pages.FindAsync(id) ?? throw new ApiError(404, "Page not found.");
                 var config = await Access(db, ctx, page.ConnectionId, page.Table, "read");
                 await using var c = await service.Open(config);
+                await Sumups.RepairIfPending(db, service, c, page.ConnectionId);
                 var records = await service.PageRecord(c, page.Table, key);
                 var layout = await Layout(db, page.ConnectionId, page.Table);
                 await RecordPresentation.Decorate(
@@ -471,6 +472,7 @@ public static class PageEndpoints
                 if (search?.Length > 200)
                     throw new ApiError(400, "Search is limited to 200 characters.");
                 await using var c = await service.Open(config);
+                await Sumups.RepairIfPending(db, service, c, configPage.ConnectionId);
                 var parent = await service.PageRecord(c, configPage.Table, key);
                 if (!parent.Columns.Any(col => col.Name == tab.ParentColumn))
                     throw new ApiError(400, "Parent relationship column no longer exists.");
@@ -547,6 +549,8 @@ public static class PageEndpoints
                         );
                     tab = await ResolveTab(db, page.ConnectionId, page.Table, tab);
                     await using var c = await service.Open(config);
+                    await using var gate = await SumupGate.Enter(c);
+                    var plans = await Sumups.Ready(db, service, c, page.ConnectionId);
                     var layout = await Layout(db, page.ConnectionId, tab.Table);
                     var field = layout.Fields.Single(f => f.Name == tab.LookupField);
                     var columns = await service.Columns(c, tab.Table);
@@ -625,7 +629,8 @@ public static class PageEndpoints
                         {
                             // Lock/reload the actual parent inside the insertion transaction; copy values are then re-read there too.
                             values[field.Name] = await ParentKey(tx);
-                        }
+                        },
+                        sumups: plans
                     );
                     db.Audit.Add(
                         new()

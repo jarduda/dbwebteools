@@ -261,6 +261,7 @@ export function RecordPageView({
                 >
                   <RelatedRecords
                     key={`${activeTab.id}/${revision}`}
+                    onCreated={() => setRevision((v) => v + 1)}
                     editor={Editor}
                     pageId={route.id}
                     parentKey={route.key}
@@ -320,11 +321,13 @@ type CreatePreview = {
   lockedFields: string[];
 };
 function RelatedRecords({
+  onCreated,
   editor: Editor,
   pageId,
   parentKey,
   tab,
 }: {
+  onCreated: () => void;
   editor: ComponentType<EditorProps>;
   pageId: number;
   parentKey: string;
@@ -399,6 +402,7 @@ function RelatedRecords({
               values,
             });
             setPreview(null);
+            onCreated();
             setSearch("");
             setPage(1);
             setRevision((v) => v + 1);
