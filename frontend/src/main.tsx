@@ -1832,6 +1832,17 @@ function Admin({
                       substring starts at zero.
                     </p>
                     <p>
+                      Dropdown labels:{" "}
+                      <code>DropdownDisplay('status', [status])</code> resolves
+                      a key using the named dropdown in this layout. Use the
+                      column name, not its label. NULL or unknown keys return
+                      NULL; use{" "}
+                      <code>
+                        Coalesce(DropdownDisplay('status', [status]), 'Unknown')
+                      </code>{" "}
+                      for a fallback.
+                    </p>
+                    <p>
                       Available columns:{" "}
                       {layoutColumns.map((c) => `[${c.name}]`).join(", ")}
                     </p>

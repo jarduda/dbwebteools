@@ -116,10 +116,14 @@ Concat(Upper(Trim([name])), ' — ', [code])
 Replace([description], 'old', 'new')
 Substring([code], 0, 3)
 Coalesce([discount], 0)
+DropdownDisplay('status', [status])
+Concat('Status: ', Coalesce(DropdownDisplay('status', [status]), 'Unknown'))
 if([quantity] > 0, [amount] / [quantity], 0)
 ```
 
-Supported operations: `+ - * / %`, comparisons, boolean expressions; `Round(value, places)`, `Abs`, `Floor`, `Ceiling`, `Min(a,b)`, `Max(a,b)`, `Concat`, `Upper`, `Lower`, `Trim`, `Length`, `Substring(text,start,length)`, `Replace(text,from,to)`, `Coalesce(value,fallback,...)`, and `if(condition,yes,no)`. Function names are case-sensitive, substring indexes start at zero, and Round uses midpoint-to-even. Arithmetic/math functions propagate NULL; text functions treat NULL as empty text. Decimal computations preserve database precision within .NET decimal limits; results travel as strings, not imprecise JavaScript numbers. Errors such as division by zero or out-of-range values display a per-field calculation error without breaking the record list.
+Supported operations: `+ - * / %`, comparisons, boolean expressions; `Round(value, places)`, `Abs`, `Floor`, `Ceiling`, `Min(a,b)`, `Max(a,b)`, `Concat`, `Upper`, `Lower`, `Trim`, `Length`, `Substring(text,start,length)`, `Replace(text,from,to)`, `Coalesce(value,fallback,...)`, `DropdownDisplay('field_name', key)`, and `if(condition,yes,no)`. Function names are case-sensitive, substring indexes start at zero, and Round uses midpoint-to-even. Arithmetic/math functions propagate NULL; text functions treat NULL as empty text. Decimal computations preserve database precision within .NET decimal limits; results travel as strings, not imprecise JavaScript numbers. Errors such as division by zero or out-of-range values display a per-field calculation error without breaking the record list.
+
+`DropdownDisplay('status', [status])` returns the display label configured for the supplied key on the `status` dropdown in the same layout. The first argument must be a quoted **stored column name**, not a field label or dynamic expression; it is checked when saving the layout. The key may be a column reference, literal, or expression. Keys match exactly (case-sensitive), consistent with normal dropdown display. Unknown/NULL keys return NULL; wrap the call in `Coalesce(..., 'Unknown')` for a fallback. Updated dropdown labels take effect on the next list load or editor calculation, without rewriting stored keys. This resolves configured dropdown options, not relational lookup tables.
 
 [NCalc](https://github.com/ncalc/ncalc) supplies the expression parser/interpreter. Only documented functions/operators and existing scalar stored columns are accepted—no SQL or arbitrary code. Limits: 20 total joined/formula fields, 1,024 expression characters, 32 nested expression levels, 8,192 input/output text characters, and an evaluation deadline.
 

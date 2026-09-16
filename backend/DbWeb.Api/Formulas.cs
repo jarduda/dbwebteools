@@ -18,6 +18,7 @@ public static class Formulas
         "Substring",
         "Replace",
         "Coalesce",
+        "DropdownDisplay",
         "Round",
         "Abs",
         "Floor",
@@ -27,7 +28,11 @@ public static class Formulas
         "if",
     };
 
-    public static Expression Compile(string? formula, List<ColumnInfo> columns)
+    public static Expression Compile(
+        string? formula,
+        List<ColumnInfo> columns,
+        List<LayoutField>? fields = null
+    )
     {
         if (string.IsNullOrWhiteSpace(formula) || formula.Length > 1024)
             throw new ApiError(400, "Formula must contain 1–1024 characters.");
@@ -77,7 +82,18 @@ public static class Formulas
                 );
             if (expression.GetFunctionNames().Any(n => !Functions.Contains(n)))
                 throw new ApiError(400, "Formula uses an unsupported function.");
-            ValidateTree(expression.LogicalExpression!, 0);
+            ValidateTree(expression.LogicalExpression!, 0, columns, fields ?? []);
+            expression.Functions["DropdownDisplay"] = a =>
+            {
+                var fieldName = Text(a.Evaluate(0));
+                var key = a.Evaluate(1);
+                if (key == null)
+                    return null;
+                return fields!
+                    .Single(f => f.Name == fieldName && f.Widget == "dropdown")
+                    .Options?.FirstOrDefault(o => o.Key == Text(key))
+                    ?.Display;
+            };
             foreach (var name in new[] { "Round", "Abs", "Floor", "Ceiling", "Min", "Max" })
                 expression.Functions[name] = a =>
                 {
@@ -173,7 +189,12 @@ public static class Formulas
         }
     }
 
-    static void ValidateTree(LogicalExpression node, int depth)
+    static void ValidateTree(
+        LogicalExpression node,
+        int depth,
+        List<ColumnInfo> columns,
+        List<LayoutField> fields
+    )
     {
         if (depth > 32)
             throw new ApiError(400, "Formula nesting is limited to 32 levels.");
@@ -194,13 +215,25 @@ public static class Formulas
                 "Concat" => count is >= 1 and <= 20,
                 "Coalesce" => count is >= 2 and <= 20,
                 "Replace" or "Substring" or "if" => count == 3,
-                "Round" or "Min" or "Max" => count == 2,
+                "Round" or "Min" or "Max" or "DropdownDisplay" => count == 2,
                 _ => count == 1,
             };
             if (!valid)
                 throw new ApiError(
                     400,
                     $"Incorrect number of arguments for {function.Identifier.Name}."
+                );
+            if (
+                function.Identifier.Name == "DropdownDisplay"
+                && (
+                    function.Parameters[0] is not ValueExpression { Value: string fieldName }
+                    || !columns.Any(c => c.Name == fieldName)
+                    || !fields.Any(f => f.Name == fieldName && f.Widget == "dropdown")
+                )
+            )
+                throw new ApiError(
+                    400,
+                    "DropdownDisplay requires a quoted dropdown column name from this layout, for example DropdownDisplay('status', [status])."
                 );
         }
         if (
@@ -228,7 +261,7 @@ public static class Formulas
                 "Formula operator is not supported. Use arithmetic, comparisons, and boolean operators."
             );
         foreach (var child in children)
-            ValidateTree(child, depth + 1);
+            ValidateTree(child, depth + 1, columns, fields);
     }
 
     static bool Scalar(ColumnInfo c) =>
@@ -274,7 +307,7 @@ public static class Formulas
         var result = new List<ColumnInfo>();
         foreach (var field in fields.Where(f => f.Widget == "formula"))
         {
-            var expression = Compile(field.Formula, columns);
+            var expression = Compile(field.Formula, columns, fields);
             var references = expression.GetParameterNames().Where(n => n != "null").ToList();
             result.Add(new(field.Name, "text", true, false, true, false, null));
             foreach (var row in rows)

@@ -1,3 +1,4 @@
+using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using DbWeb.Api;
@@ -76,6 +77,18 @@ public partial class ApiTests
                     Options: [new("x", "Łódź office"), new("y", "Manager's queue")]
                 ),
             };
+            fields.Add(
+                new(
+                    "status_formula",
+                    "Status formula",
+                    "",
+                    2,
+                    false,
+                    true,
+                    "formula",
+                    Formula: "Concat('Status: ', Coalesce(DropdownDisplay('status', [status]), 'Unknown'))"
+                )
+            );
             var view = new ListView(
                 Sort: "id",
                 Descending: true,
@@ -112,6 +125,42 @@ public partial class ApiTests
                     .GetProperty("status")
                     .GetString()
             );
+            Assert.Equal(
+                "Status: Review complete",
+                first
+                    .GetProperty("rows")[0]
+                    .GetProperty("joinedValues")
+                    .GetProperty("status_formula")
+                    .GetString()
+            );
+            Assert.False(
+                first
+                    .GetProperty("rows")[0]
+                    .GetProperty("values")
+                    .TryGetProperty("status_formula", out _)
+            );
+            var resolvePath = $"/api/connections/{id}/tables/{table}/joins/resolve";
+            async Task<string?> Preview(string? status)
+            {
+                var preview = await client.PostAsJsonAsync(
+                    resolvePath,
+                    new { values = new { status } }
+                );
+                preview.EnsureSuccessStatusCode();
+                return (await preview.Content.ReadFromJsonAsync<JsonElement>())
+                    .GetProperty("values")
+                    .GetProperty("status_formula")
+                    .GetString();
+            }
+            Assert.Equal("Status: Awaiting review", await Preview("a"));
+            Assert.Equal("Status: Unknown", await Preview(null));
+            Assert.Equal("Status: Unknown", await Preview("legacy"));
+            Assert.Equal("Status: Unknown", await Preview("A"));
+            // Removing a referenced dropdown must be rejected, not break existing lists.
+            Assert.Equal(
+                HttpStatusCode.BadRequest,
+                (await client.PutAsJsonAsync(layoutPath, new[] { fields[2] })).StatusCode
+            );
             Assert.Equal<int[]>([1], Ids(await Rows("awaiting"))); // Excludes inactive and differently cased legacy keys.
             Assert.Equal<int[]>([2], Ids(await Rows("Manager's"))); // TINYTEXT dropdown, apostrophe, and filter.
             Assert.Equal<int[]>([5, 1], Ids(await Rows("ŁÓDŹ"))); // Unicode case-insensitive labels and NULL status.
@@ -126,6 +175,15 @@ public partial class ApiTests
                 Options = [new("a", "Pending approval"), new("b", "Done")],
             };
             await Save(fields);
+            Assert.Equal("Status: Pending approval", await Preview("a"));
+            Assert.Equal(
+                "Status: Pending approval",
+                (await Rows("approval"))
+                    .GetProperty("rows")[0]
+                    .GetProperty("joinedValues")
+                    .GetProperty("status_formula")
+                    .GetString()
+            );
             Assert.Empty(Ids(await Rows("review"))); // No stale cached labels after layout changes.
             Assert.Equal<int[]>([1], Ids(await Rows("approval")));
             await Save([]);

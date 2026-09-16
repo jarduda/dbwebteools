@@ -587,7 +587,7 @@ admin.MapPut(
                 {
                     if (field.Join != null)
                         throw new ApiError(400, "Formula fields cannot define a join.");
-                    Formulas.Compile(field.Formula, cols);
+                    Formulas.Compile(field.Formula, cols, fields);
                 }
                 else
                 {
