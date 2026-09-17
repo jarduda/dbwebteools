@@ -237,6 +237,7 @@ app.MapGet(
     )
     .RequireAuthorization();
 var admin = app.MapGroup("/api/admin").RequireAuthorization("Admin");
+SchemaDesigner.Map(admin);
 admin.MapGet(
     "/users",
     async (AppDb db) =>

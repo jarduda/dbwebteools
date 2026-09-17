@@ -164,6 +164,9 @@ test("configure all field levels and edit only allowed fields with hidden primar
   });
   const member = await memberContext.newPage();
   await login(member, "field_browser", "field-browser-password-12345");
+  await expect(
+    member.getByRole("button", { name: "Table designer", exact: true }),
+  ).toHaveCount(0);
   const records = await member.evaluate(
     async (id) =>
       await (

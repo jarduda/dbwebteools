@@ -4,7 +4,8 @@ export default defineConfig({
   projects: [
     {
       name: "workspace",
-      testIgnore: /field-access.spec.ts|session-recovery.spec.ts/,
+      testIgnore:
+        /field-access.spec.ts|session-recovery.spec.ts|schema-designer.spec.ts/,
     },
     {
       name: "field-security",
@@ -12,9 +13,14 @@ export default defineConfig({
       dependencies: ["workspace"],
     },
     {
+      name: "schema-designer",
+      testMatch: /schema-designer.spec.ts/,
+      dependencies: ["field-security"],
+    },
+    {
       name: "session-recovery",
       testMatch: /session-recovery.spec.ts/,
-      dependencies: ["field-security"],
+      dependencies: ["schema-designer"],
     },
   ],
   outputDir: "../../artifacts/playwright-results",
