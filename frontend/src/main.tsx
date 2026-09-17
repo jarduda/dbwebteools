@@ -1,3 +1,4 @@
+import { SchemaEditor } from "./schema-editor";
 import { SEARCH_DELAY_MS } from "./search";
 import React, { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
@@ -63,6 +64,7 @@ function App() {
     [tables, setTables] = useState<string[]>([]),
     [table, setTable] = useState(""),
     [error, setError] = useState("");
+  const [schemaRevision, setSchemaRevision] = useState(0);
   const [sessionNotice, setSessionNotice] = useState("");
   useEffect(() => {
     const expired = () => {
@@ -166,7 +168,7 @@ function App() {
     return () => {
       active = false;
     };
-  }, [connection]);
+  }, [connection, schemaRevision]);
   if (!ready) return <div className="loading">Opening your workspace…</div>;
   if (!user)
     return (
@@ -203,6 +205,7 @@ function App() {
             {[
               ["users", "Users & roles", Users],
               ["connections", "Connections", Database],
+              ["schema", "Table designer", Table2],
               ["permissions", "Table access", ShieldCheck],
               ["layouts", "Editor layouts", Settings2],
               ["pages", "Page editor", Table2],
@@ -267,6 +270,11 @@ function App() {
               key={hash}
               route={pageRoute}
               editor={RecordEditor}
+            />
+          ) : view === "schema" && user.isAdmin ? (
+            <SchemaEditor
+              connections={connections}
+              onChanged={() => setSchemaRevision((v) => v + 1)}
             />
           ) : view === "pages" && user.isAdmin ? (
             <PageEditor connections={connections} />
