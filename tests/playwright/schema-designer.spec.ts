@@ -71,23 +71,23 @@ test("design tables, typed columns and a relation lookup, then create a related 
       .getByRole("button", { name: "Create table", exact: true })
       .click();
     await expect(
-      page.getByRole("region", { name: "Table structure" }),
+      page.getByRole("region", { name: "Object definition" }),
     ).toContainText("Primary key");
     await expect(
-      page.getByRole("button", { name: "Edit column id", exact: true }),
+      page.getByRole("button", { name: "Edit field id", exact: true }),
     ).toBeDisabled();
   }
   async function startColumn(name: string, type: string) {
-    await page.getByRole("button", { name: "Add column", exact: true }).click();
-    await page.getByLabel("Column name", { exact: true }).fill(name);
+    await page.getByRole("button", { name: "Add field", exact: true }).click();
+    await page.getByLabel("Field name", { exact: true }).fill(name);
     await page.getByLabel("Column type", { exact: true }).selectOption(type);
   }
   async function saveColumn() {
     await page
-      .getByRole("button", { name: "Create column", exact: true })
+      .getByRole("button", { name: "Create field", exact: true })
       .click();
     await expect(
-      page.getByRole("form", { name: "Add column", exact: true }),
+      page.getByRole("form", { name: "Add field", exact: true }),
     ).toHaveCount(0);
   }
   await createTable(parent);
@@ -95,12 +95,12 @@ test("design tables, typed columns and a relation lookup, then create a related 
   await page.getByLabel("Text length", { exact: true }).fill("80");
   await saveColumn();
   await page
-    .getByRole("button", { name: "Edit column name", exact: true })
+    .getByRole("button", { name: "Edit field name", exact: true })
     .click();
   await page.getByLabel("Text length", { exact: true }).fill("120");
-  await page.getByRole("button", { name: "Save column", exact: true }).click();
+  await page.getByRole("button", { name: "Save field", exact: true }).click();
   await expect(
-    page.getByRole("region", { name: "Table structure" }),
+    page.getByRole("region", { name: "Object definition" }),
   ).toContainText("varchar(120)");
   await createTable(child);
   await startColumn("amount", "decimal");
@@ -108,7 +108,7 @@ test("design tables, typed columns and a relation lookup, then create a related 
   await page.getByLabel("Decimal places", { exact: true }).fill("4");
   await saveColumn();
   await expect(
-    page.getByRole("region", { name: "Table structure" }),
+    page.getByRole("region", { name: "Object definition" }),
   ).toContainText("decimal(14,4)");
   await startColumn("parent_id", "relation");
   await page.getByLabel("Related table", { exact: true }).selectOption(parent);
@@ -119,7 +119,7 @@ test("design tables, typed columns and a relation lookup, then create a related 
   await saveColumn();
   await expect(
     page.getByText(
-      "Relation column created. Foreign key and object lookup configured.",
+      "Relation field created. Foreign key and object lookup configured.",
       { exact: true },
     ),
   ).toBeVisible();
@@ -130,13 +130,13 @@ test("design tables, typed columns and a relation lookup, then create a related 
     ),
   ).toBe(true);
   const addBox = await page
-    .getByRole("button", { name: "Add column", exact: true })
+    .getByRole("button", { name: "Add field", exact: true })
     .boundingBox();
   expect(addBox!.x + addBox!.width).toBeLessThanOrEqual(390);
-  await page.getByRole("button", { name: "Add column", exact: true }).click();
-  await expect(page.getByLabel("Column name", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Add field", exact: true }).click();
+  await expect(page.getByLabel("Field name", { exact: true })).toBeVisible();
   await page
-    .getByRole("form", { name: "Add column", exact: true })
+    .getByRole("form", { name: "Add field", exact: true })
     .getByRole("button", { name: "Cancel", exact: true })
     .click();
   await page.screenshot({
@@ -191,10 +191,10 @@ test("design tables, typed columns and a relation lookup, then create a related 
     .nth(1)
     .selectOption(parent);
   await page
-    .getByRole("button", { name: "Edit column name", exact: true })
+    .getByRole("button", { name: "Edit field name", exact: true })
     .click();
   await page.getByLabel("Text length", { exact: true }).fill("2");
-  await page.getByRole("button", { name: "Save column", exact: true }).click();
+  await page.getByRole("button", { name: "Save field", exact: true }).click();
   await expect(page.getByRole("alert")).toContainText("Existing text exceeds");
   await page.screenshot({
     path: "../../artifacts/schema-designer-desktop.png",

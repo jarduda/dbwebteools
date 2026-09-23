@@ -7,7 +7,6 @@ namespace DbWeb.Api;
 public record ObjectField(
     string Name,
     string Label,
-    string Section,
     bool ReadOnly,
     string Widget,
     LookupConfig? Lookup = null,
@@ -27,6 +26,7 @@ public record ObjectDefinition(
 
 public record FieldPresentation(
     string Name,
+    string Section = "",
     int EditorOrder = 0,
     bool ShowInEditor = true,
     bool ShowInList = true,
@@ -71,6 +71,49 @@ public static class ObjectModel
                     || stored.Layout.Fields.Any(f => f == null)
                 )
                     throw new ApiError(400, "Object and layout fields are required.");
+                var legacySections = new Dictionary<string, string>(
+                    StringComparer.OrdinalIgnoreCase
+                );
+                if (
+                    TryProperty(document.RootElement, "object", out var objectElement)
+                    && TryProperty(objectElement, "fields", out var objectFields)
+                )
+                    foreach (var field in objectFields.EnumerateArray())
+                        if (
+                            TryProperty(field, "name", out var name)
+                            && TryProperty(field, "section", out var section)
+                            && name.ValueKind == JsonValueKind.String
+                            && section.ValueKind is JsonValueKind.String or JsonValueKind.Null
+                        )
+                            legacySections[name.GetString() ?? ""] = section.GetString() ?? "";
+                var layoutHasSection = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                if (
+                    TryProperty(document.RootElement, "layout", out var layoutElement)
+                    && TryProperty(layoutElement, "fields", out var layoutFields)
+                )
+                    foreach (var field in layoutFields.EnumerateArray())
+                        if (
+                            TryProperty(field, "name", out var name)
+                            && TryProperty(field, "section", out _)
+                            && name.ValueKind == JsonValueKind.String
+                        )
+                            layoutHasSection.Add(name.GetString() ?? "");
+                stored = stored with
+                {
+                    Layout = new(
+                        stored
+                            .Layout.Fields.Select(f =>
+                                !layoutHasSection.Contains(f.Name)
+                                && legacySections.TryGetValue(f.Name, out var section)
+                                    ? f with
+                                    {
+                                        Section = section,
+                                    }
+                                    : f
+                            )
+                            .ToList()
+                    ),
+                };
                 return Normalize(stored);
             }
             return Split(DatabaseService.ParseLegacyLayout(document.RootElement));
@@ -89,7 +132,7 @@ public static class ObjectModel
         var layout = stored
             .Layout.Fields.Where(f => names.Contains(f.Name))
             .GroupBy(f => f.Name, StringComparer.OrdinalIgnoreCase)
-            .Select(g => g.First())
+            .Select(g => g.First() with { Section = g.First().Section ?? "" })
             .ToList();
         for (var i = 0; i < stored.Object.Fields.Count; i++)
         {
@@ -106,7 +149,6 @@ public static class ObjectModel
             .Fields.Select(f => new ObjectField(
                 f.Name,
                 f.Label,
-                f.Section,
                 f.ReadOnly,
                 f.Widget,
                 f.Lookup,
@@ -123,10 +165,11 @@ public static class ObjectModel
                 (f, i) =>
                     new FieldPresentation(
                         f.Name,
-                        f.Order,
-                        !f.Hidden,
-                        f.ShowInList,
-                        f.ListOrder ?? f.Order
+                        Section: f.Section,
+                        EditorOrder: f.Order,
+                        ShowInEditor: !f.Hidden,
+                        ShowInList: f.ShowInList,
+                        ListOrder: f.ListOrder ?? f.Order
                     )
             )
             .ToList();
@@ -151,13 +194,7 @@ public static class ObjectModel
                 )
             )
                 fields.Add(
-                    new(
-                        column.Name,
-                        column.Name,
-                        "",
-                        column.Generated || column.AutoIncrement,
-                        "auto"
-                    )
+                    new(column.Name, column.Name, column.Generated || column.AutoIncrement, "auto")
                 );
         return definition with { Fields = fields };
     }
@@ -179,7 +216,7 @@ public static class ObjectModel
                         return new LayoutField(
                             f.Name,
                             f.Label,
-                            f.Section,
+                            p.Section,
                             p.EditorOrder,
                             !p.ShowInEditor,
                             f.ReadOnly,

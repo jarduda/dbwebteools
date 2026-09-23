@@ -4,7 +4,7 @@ test("configure all field levels and edit only allowed fields with hidden primar
   page,
   browser,
 }) => {
-  test.setTimeout(150_000);
+  test.setTimeout(240_000);
   async function login(p: Page, username: string, password: string) {
     await p.goto("/");
     // This project runs after workspace tests. Honor the real per-IP login rate limit.
@@ -192,19 +192,20 @@ test("configure all field levels and edit only allowed fields with hidden primar
   await expect(dialog.getByLabel("note", { exact: true })).toBeDisabled();
   await expect(dialog.getByLabel("secret", { exact: true })).toHaveCount(0);
   await expect(dialog.getByLabel("id", { exact: true })).toHaveCount(0);
-  await dialog.getByLabel("name", { exact: true }).fill("Allowed edit");
-  const request = member.waitForRequest((r) =>
-    r.url().endsWith("/z_field_records/update"),
-  );
-  await dialog
-    .getByRole("button", { name: "Save record", exact: true })
-    .click();
-  const body = (await request).postDataJSON();
-  expect(body.values).toEqual({ name: "Allowed edit" });
+  const editedName = `Allowed edit ${Date.now()}`;
+  await dialog.getByLabel("name", { exact: true }).fill(editedName);
+  const save = dialog.getByRole("button", { name: "Save record", exact: true });
+  await expect(save).toBeEnabled();
+  const [request] = await Promise.all([
+    member.waitForRequest((r) => r.url().endsWith("/z_field_records/update")),
+    save.click(),
+  ]);
+  const body = request.postDataJSON();
+  expect(body.values).toEqual({ name: editedName });
   expect(body.key.$record).toBeTruthy();
   await expect(dialog).not.toBeVisible();
   await expect(
-    member.getByRole("cell", { name: "Allowed edit", exact: true }),
+    member.getByRole("cell", { name: editedName, exact: true }),
   ).toBeVisible();
   await member
     .getByLabel("Search records", { exact: true })

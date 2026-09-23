@@ -23,7 +23,7 @@ public static class ObjectConfigurationRules
             || presentation.Fields.Any(f => !names.Contains(f.Name))
         )
             throw new ApiError(400, "Layout must configure every object field exactly once.");
-        if (definition.Fields.Any(f => f.Section?.Length > 150))
+        if (presentation.Fields.Any(f => f.Section == null || f.Section.Length > 150))
             throw new ApiError(400, "Editor section names must be at most 150 characters.");
         var required = definition.Fields.Where(f => f.Required).Select(f => f.Name).ToHashSet();
         if (presentation.Fields.Any(f => !f.ShowInEditor && required.Contains(f.Name)))

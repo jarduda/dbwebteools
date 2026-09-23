@@ -520,6 +520,17 @@ test("list columns and read-only joins refresh when a lookup changes", async ({
   await page
     .getByRole("combobox", { name: "Table", exact: true })
     .selectOption("lookup_orders");
+  const objectDefinition = page.getByRole("region", {
+    name: "Object definition",
+  });
+  await expect(
+    page.getByRole("region", { name: "Table structure" }),
+  ).toHaveCount(0);
+  await expect(objectDefinition.getByRole("table")).toHaveCount(1);
+  await expect(objectDefinition).toContainText("Database definition");
+  await expect(
+    page.getByLabel("person_id section", { exact: true }),
+  ).toHaveCount(0);
   await expect(page.getByLabel("id showInList", { exact: true })).toHaveCount(
     0,
   );
@@ -568,6 +579,9 @@ test("list columns and read-only joins refresh when a lookup changes", async ({
   await expect(
     page.getByLabel("person_id control", { exact: true }),
   ).toHaveCount(0);
+  await page
+    .getByLabel("person_id section", { exact: true })
+    .fill("Customer details");
   await page.getByLabel("id showInList", { exact: true }).uncheck();
   await page.getByLabel("person_id showInList", { exact: true }).uncheck();
   await page.getByLabel("title listOrder", { exact: true }).fill("1");
@@ -693,6 +707,9 @@ test("list columns and read-only joins refresh when a lookup changes", async ({
   await expect(
     page.getByLabel("joined_2 showInList", { exact: true }),
   ).not.toBeChecked();
+  await expect(
+    page.getByLabel("person_id section", { exact: true }),
+  ).toHaveValue("Customer details");
   await page.getByLabel("title showInList", { exact: true }).uncheck();
   await page.getByLabel("joined_1 showInList", { exact: true }).uncheck();
   await page.getByRole("button", { name: "Save layout", exact: true }).click();

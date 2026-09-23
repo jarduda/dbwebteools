@@ -116,7 +116,7 @@ export type Field = {
 };
 export type ObjectField = Omit<
   Field,
-  "order" | "hidden" | "showInList" | "listOrder"
+  "section" | "order" | "hidden" | "showInList" | "listOrder"
 >;
 export type ObjectDefinition = {
   fields: ObjectField[];
@@ -125,6 +125,7 @@ export type ObjectDefinition = {
 };
 export type FieldPresentation = {
   name: string;
+  section: string;
   editorOrder: number;
   showInEditor: boolean;
   showInList: boolean;

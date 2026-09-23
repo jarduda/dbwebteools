@@ -709,6 +709,55 @@ admin.MapPut(
             {
                 throw new ApiError(400, "Invalid layout configuration.");
             }
+            if (presentation.Fields == null)
+                throw new ApiError(400, "Layout fields are required.");
+            var fieldsElement = input
+                .EnumerateObject()
+                .FirstOrDefault(p => p.Name.Equals("fields", StringComparison.OrdinalIgnoreCase))
+                .Value;
+            var fieldsWithSection =
+                fieldsElement.ValueKind == JsonValueKind.Array
+                    ? fieldsElement
+                        .EnumerateArray()
+                        .Where(field =>
+                            field.ValueKind == JsonValueKind.Object
+                            && field
+                                .EnumerateObject()
+                                .Any(p =>
+                                    p.Name.Equals("section", StringComparison.OrdinalIgnoreCase)
+                                )
+                        )
+                        .Select(field =>
+                            field
+                                .EnumerateObject()
+                                .FirstOrDefault(p =>
+                                    p.Name.Equals("name", StringComparison.OrdinalIgnoreCase)
+                                )
+                                .Value
+                        )
+                        .Where(name => name.ValueKind == JsonValueKind.String)
+                        .Select(name => name.GetString() ?? "")
+                        .ToHashSet(StringComparer.OrdinalIgnoreCase)
+                    : [];
+            var existingSections = stored.Layout.Fields.ToDictionary(
+                field => field.Name,
+                field => field.Section,
+                StringComparer.OrdinalIgnoreCase
+            );
+            presentation = presentation with
+            {
+                Fields = presentation
+                    .Fields.Select(field =>
+                        !fieldsWithSection.Contains(field.Name)
+                        && existingSections.TryGetValue(field.Name, out var section)
+                            ? field with
+                            {
+                                Section = section,
+                            }
+                            : field
+                    )
+                    .ToList(),
+            };
             merged = await ObjectConfigurationRules.Validate(
                 service,
                 connection,

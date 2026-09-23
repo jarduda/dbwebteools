@@ -1770,7 +1770,7 @@ function Admin({
             <>
               <h2>Editor and list layout</h2>
               <p>
-                Control only field order and visibility. Labels, sections,
+                Control editor sections plus field order and visibility. Labels,
                 controls, validation, relationships, defaults, formulas, joins,
                 filters and sorting are defined in Object editor.
               </p>
@@ -1783,6 +1783,7 @@ function Admin({
                       <tr>
                         <th>Field</th>
                         <th>Object label</th>
+                        <th>Editor section</th>
                         <th>Editor order</th>
                         <th>Show in editor</th>
                         <th>List order</th>
@@ -1794,6 +1795,25 @@ function Admin({
                         <tr key={field.name}>
                           <td>{field.name}</td>
                           <td>{field.label || field.name}</td>
+                          <td>
+                            <input
+                              aria-label={`${field.name} section`}
+                              maxLength={150}
+                              value={field.section}
+                              onChange={(event) =>
+                                setFields((old) =>
+                                  old.map((item) =>
+                                    item.name === field.name
+                                      ? {
+                                          ...item,
+                                          section: event.target.value,
+                                        }
+                                      : item,
+                                  ),
+                                )
+                              }
+                            />
+                          </td>
                           <td>
                             <input
                               type="number"
@@ -1891,6 +1911,7 @@ function Admin({
                         {
                           fields: fields.map((field) => ({
                             name: field.name,
+                            section: field.section,
                             editorOrder: field.order,
                             showInEditor: !field.hidden,
                             showInList: field.showInList !== false,
