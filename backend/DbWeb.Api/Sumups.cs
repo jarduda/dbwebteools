@@ -243,7 +243,7 @@ public static class Sumups
             await service.RebuildSumups(c, tx, plans);
             await tx.CommitAsync();
             foreach (var layout in layouts)
-                layout.FieldsJson = JsonSerializer.Serialize(
+                layout.FieldsJson = ObjectModel.Serialize(
                     DatabaseService.Layout(layout.FieldsJson) with
                     {
                         SumupsPending = false,
@@ -305,7 +305,7 @@ public static class Sumups
             .ToList();
         await using var tx = await c.BeginTransactionAsync();
         await service.RebuildSumups(c, tx, plans);
-        layout.FieldsJson = JsonSerializer.Serialize(
+        layout.FieldsJson = ObjectModel.Serialize(
             definition with
             {
                 SumupsPending = plans.Count > 0,
@@ -315,7 +315,7 @@ public static class Sumups
         await tx.CommitAsync();
         if (plans.Count > 0)
         {
-            layout.FieldsJson = JsonSerializer.Serialize(definition with { SumupsPending = false });
+            layout.FieldsJson = ObjectModel.Serialize(definition with { SumupsPending = false });
             await db.SaveChangesAsync();
         }
     }

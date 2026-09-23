@@ -105,6 +105,7 @@ using (var scope = app.Services.CreateScope())
     db.Database.EnsureCreated();
     PageSchema.EnsureCreated(db);
     FieldAccess.EnsureCreated(db);
+    ObjectModel.Migrate(db);
     if (!db.Users.Any())
     {
         var password = builder.Configuration["Bootstrap:Password"];
@@ -581,114 +582,147 @@ api.MapGet(
         };
     }
 );
-admin.MapPut(
-    "/connections/{id:int}/tables/{table}/layout",
-    async (int id, string table, JsonElement input, AppDb db, DatabaseService s) =>
+admin.MapGet(
+    "/connections/{id:int}/tables/{table}/object",
+    async (int id, string table, AppDb db, DatabaseService service) =>
     {
-        await using var c = await s.Open(
-            await db.Connections.FindAsync(id) ?? throw new ApiError(404, "Connection not found.")
+        var config =
+            await db.Connections.FindAsync(id) ?? throw new ApiError(404, "Connection not found.");
+        await using var connection = await service.Open(config);
+        var columns = await service.Columns(connection, table);
+        var stored = ObjectModel.Stored(
+            (
+                await db.Layouts.SingleOrDefaultAsync(x => x.ConnectionId == id && x.Table == table)
+            )?.FieldsJson
         );
-        await using var gate = await SumupGate.Enter(c);
-        var definition = DatabaseService.ParseLayout(input) with { SumupsPending = false };
-        var fields = definition.Fields;
-        var cols = await s.Columns(c, table);
-        using var validation = c.CreateCommand();
-        DatabaseService.ViewPredicate(validation, definition.View, cols);
-        if (fields.Any(f => f.Label == null || f.Label.Length > 150))
-            throw new ApiError(400, "Field labels must be at most 150 characters.");
-        if (
-            fields.Select(x => x.Name).Distinct(StringComparer.OrdinalIgnoreCase).Count()
-                != fields.Count
-            || fields.Count(x => x.Widget is "join" or "formula") > 20
-            || fields.Any(x =>
-                (x.Widget is not "join" and not "formula" && !cols.Any(y => y.Name == x.Name))
-                || !new[]
-                {
-                    "auto",
-                    "text",
-                    "textarea",
-                    "number",
-                    "date",
-                    "datetime",
-                    "dropdown",
-                    "checkbox",
-                    "lookup",
-                    "join",
-                    "formula",
-                    "sumup",
-                }.Contains(x.Widget)
-            )
-        )
-            throw new ApiError(400, "Invalid layout fields.");
-        foreach (var field in fields)
-        {
-            if (field.Widget != "sumup" && field.Sumup != null)
-                throw new ApiError(400, "Only sum-up fields can define sum-up configuration.");
-            if (field.Widget is "join" or "formula")
-            {
-                if (
-                    string.IsNullOrWhiteSpace(field.Name)
-                    || field.Name.Length > 100
-                    || field.Name != field.Name.Trim()
-                    || cols.Any(col =>
-                        col.Name.Equals(field.Name, StringComparison.OrdinalIgnoreCase)
+        return ObjectModel.WithColumns(stored.Object, columns);
+    }
+);
+admin.MapGet(
+    "/connections/{id:int}/tables/{table}/layout",
+    async (int id, string table, AppDb db, DatabaseService service) =>
+    {
+        var config =
+            await db.Connections.FindAsync(id) ?? throw new ApiError(404, "Connection not found.");
+        await using var connection = await service.Open(config);
+        await service.Columns(connection, table);
+        return ObjectModel
+            .Stored(
+                (
+                    await db.Layouts.SingleOrDefaultAsync(x =>
+                        x.ConnectionId == id && x.Table == table
                     )
-                    || field.Required
-                    || field.CreationDefault != null
-                    || !field.ReadOnly
-                    || field.Lookup != null
-                    || field.Options is { Count: > 0 }
-                )
-                    throw new ApiError(
-                        400,
-                        "Computed fields must have a unique virtual name, be read-only, and have no editable control configuration."
-                    );
-                if (field.Widget == "formula")
-                {
-                    if (field.Join != null)
-                        throw new ApiError(400, "Formula fields cannot define a join.");
-                    Formulas.Compile(field.Formula, cols, fields);
-                }
-                else
-                {
-                    if (field.Formula != null)
-                        throw new ApiError(400, "Only formula fields may define a formula.");
-                    await s.ValidateJoin(
-                        c,
-                        field.Join ?? throw new ApiError(400, "Join configuration required."),
-                        cols
-                    );
-                }
-                continue;
-            }
-            if (field.Formula != null)
-                throw new ApiError(400, "Only formula fields may define a formula.");
-            if (field.Join != null)
-                throw new ApiError(400, "Only joined fields may define a join.");
-            LayoutRules.Validate(field, cols.Single(x => x.Name == field.Name));
-            if (field.Widget == "lookup")
-                await s.ValidateLookup(
-                    c,
-                    field.Lookup ?? throw new ApiError(400, "Lookup configuration required."),
-                    cols.Single(x => x.Name == field.Name)
-                );
-            else if (field.Lookup != null)
-                throw new ApiError(400, "Only lookup controls may have lookup configuration.");
-        }
-        await s.ValidateCopyMappings(c, fields, cols);
-        await s.ValidateCreationDefaults(c, fields, cols);
-        var l = await db.Layouts.SingleOrDefaultAsync(x =>
+                )?.FieldsJson
+            )
+            .Layout;
+    }
+);
+admin.MapPut(
+    "/connections/{id:int}/tables/{table}/object",
+    async (int id, string table, ObjectDefinition input, AppDb db, DatabaseService service) =>
+    {
+        var config =
+            await db.Connections.FindAsync(id) ?? throw new ApiError(404, "Connection not found.");
+        await using var connection = await service.Open(config);
+        await using var gate = await SumupGate.Enter(connection);
+        var configuration = await db.Layouts.SingleOrDefaultAsync(x =>
             x.ConnectionId == id && x.Table == table
         );
-        if (l == null)
+        var stored = ObjectModel.Stored(configuration?.FieldsJson);
+        var normalized = input with { SumupsPending = false };
+        var merged = await ObjectConfigurationRules.Validate(
+            service,
+            connection,
+            table,
+            normalized,
+            ObjectModel.CompleteLayout(normalized, stored.Layout)
+        );
+        if (configuration == null)
         {
-            l = new() { ConnectionId = id, Table = table };
-            db.Layouts.Add(l);
+            configuration = new() { ConnectionId = id, Table = table };
+            db.Layouts.Add(configuration);
         }
-        // Legacy array clients edit fields without erasing newer list-view settings.
-        if (input.ValueKind == JsonValueKind.Array)
-            definition = definition with { View = DatabaseService.Layout(l.FieldsJson).View };
-        await Sumups.SaveLayout(db, s, c, id, l, definition);
+        await Sumups.SaveLayout(db, service, connection, id, configuration, merged);
+        return Results.NoContent();
+    }
+);
+admin.MapPut(
+    "/connections/{id:int}/tables/{table}/layout",
+    async (int id, string table, JsonElement input, AppDb db, DatabaseService service) =>
+    {
+        var config =
+            await db.Connections.FindAsync(id) ?? throw new ApiError(404, "Connection not found.");
+        await using var connection = await service.Open(config);
+        await using var gate = await SumupGate.Enter(connection);
+        var configuration = await db.Layouts.SingleOrDefaultAsync(x =>
+            x.ConnectionId == id && x.Table == table
+        );
+        var stored = ObjectModel.Stored(configuration?.FieldsJson);
+
+        // Compatibility: existing API clients may still submit the former combined
+        // field array/object. New clients submit presentation-only fields here.
+        var legacy = input.ValueKind == JsonValueKind.Array;
+        if (input.ValueKind == JsonValueKind.Object)
+        {
+            var fieldsProperty = input
+                .EnumerateObject()
+                .FirstOrDefault(p => p.Name.Equals("fields", StringComparison.OrdinalIgnoreCase));
+            if (
+                fieldsProperty.Value.ValueKind == JsonValueKind.Array
+                && fieldsProperty.Value.GetArrayLength() > 0
+            )
+                legacy = fieldsProperty
+                    .Value[0]
+                    .EnumerateObject()
+                    .Any(p => p.Name.Equals("widget", StringComparison.OrdinalIgnoreCase));
+            legacy |= input
+                .EnumerateObject()
+                .Any(p => p.Name.Equals("view", StringComparison.OrdinalIgnoreCase));
+        }
+
+        LayoutDefinition merged;
+        if (legacy)
+        {
+            merged = DatabaseService.ParseLayout(input) with { SumupsPending = false };
+            if (input.ValueKind == JsonValueKind.Array)
+                merged = merged with { View = stored.Object.View };
+            var split = ObjectModel.Split(merged);
+            merged = await ObjectConfigurationRules.Validate(
+                service,
+                connection,
+                table,
+                split.Object,
+                split.Layout
+            );
+        }
+        else
+        {
+            LayoutPresentation presentation;
+            try
+            {
+                presentation =
+                    input.Deserialize<LayoutPresentation>(
+                        new JsonSerializerOptions { PropertyNameCaseInsensitive = true }
+                    ) ?? throw new ApiError(400, "Layout fields are required.");
+            }
+            catch (JsonException)
+            {
+                throw new ApiError(400, "Invalid layout configuration.");
+            }
+            merged = await ObjectConfigurationRules.Validate(
+                service,
+                connection,
+                table,
+                ObjectModel.WithColumns(stored.Object, await service.Columns(connection, table)),
+                presentation
+            );
+        }
+        if (configuration == null)
+        {
+            configuration = new() { ConnectionId = id, Table = table };
+            db.Layouts.Add(configuration);
+        }
+        await Sumups.SaveLayout(db, service, connection, id, configuration, merged);
         return Results.NoContent();
     }
 );

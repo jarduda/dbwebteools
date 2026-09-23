@@ -160,7 +160,7 @@ test("configure a relation and select, search, reopen and clear its key", async 
     },
   );
   await page.reload();
-  await page.getByRole("button", { name: "Editor layouts" }).click();
+  await page.getByRole("button", { name: "Object editor" }).click();
   await page
     .getByRole("combobox", { name: "Connection", exact: true })
     .selectOption(String(id));
@@ -175,8 +175,12 @@ test("configure a relation and select, search, reopen and clear its key", async 
   await page.getByLabel("person_id key column").selectOption("id");
   await page.getByLabel("person_id display column").selectOption("name");
   await page.getByLabel("person_id search email").check();
-  await page.getByRole("button", { name: "Save layout" }).click();
-  await expect(page.getByText("Layout saved.", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Save object" }).click();
+  await expect(
+    page.getByText("Object saved. Application behavior updated.", {
+      exact: true,
+    }),
+  ).toBeVisible();
   await page.getByRole("button", { name: "Data browser" }).click();
   await page
     .getByRole("combobox", { name: "Connection", exact: true })
@@ -347,7 +351,7 @@ test("date/time and keyed dropdown layouts preserve values and enforce unique op
     },
   );
   await page.reload();
-  await page.getByRole("button", { name: "Editor layouts" }).click();
+  await page.getByRole("button", { name: "Object editor" }).click();
   await page
     .getByRole("combobox", { name: "Connection", exact: true })
     .selectOption(String(id));
@@ -366,7 +370,7 @@ test("date/time and keyed dropdown layouts preserve values and enforce unique op
   await page.getByLabel("status option 2 display").fill("Ready to publish");
   await expect(config.getByRole("alert")).toContainText("Keys must be unique");
   await expect(
-    page.getByRole("button", { name: "Save layout" }),
+    page.getByRole("button", { name: "Save object" }),
   ).toBeDisabled();
   await page.getByLabel("status option 2 key").fill("ready");
   await page.getByLabel("status option 2 display").fill("draft document");
@@ -374,8 +378,12 @@ test("date/time and keyed dropdown layouts preserve values and enforce unique op
     "Display labels must be unique",
   );
   await page.getByLabel("status option 2 display").fill("Ready to publish");
-  await page.getByRole("button", { name: "Save layout" }).click();
-  await expect(page.getByText("Layout saved.", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Save object" }).click();
+  await expect(
+    page.getByText("Object saved. Application behavior updated.", {
+      exact: true,
+    }),
+  ).toBeVisible();
   await page.getByRole("button", { name: "Data browser" }).click();
   await page
     .getByRole("combobox", { name: "Connection", exact: true })
@@ -505,16 +513,16 @@ test("list columns and read-only joins refresh when a lookup changes", async ({
     },
   );
   await page.reload();
-  await page.getByRole("button", { name: "Editor layouts" }).click();
+  await page.getByRole("button", { name: "Object editor" }).click();
   await page
     .getByRole("combobox", { name: "Connection", exact: true })
     .selectOption(String(id));
   await page
     .getByRole("combobox", { name: "Table", exact: true })
     .selectOption("lookup_orders");
-  await page.getByLabel("id showInList", { exact: true }).uncheck();
-  await page.getByLabel("person_id showInList", { exact: true }).uncheck();
-  await page.getByLabel("title listOrder").fill("1");
+  await expect(page.getByLabel("id showInList", { exact: true })).toHaveCount(
+    0,
+  );
   await page.getByLabel("person_id control").selectOption("lookup");
   await page.getByLabel("person_id label", { exact: true }).fill("Customer");
   await page
@@ -542,9 +550,30 @@ test("list columns and read-only joins refresh when a lookup changes", async ({
       page.getByLabel(`joined_${i} readOnly`, { exact: true }),
     ).toBeDisabled();
   }
-  await page.getByLabel("joined_1 listOrder").fill("0");
+  await page.getByRole("button", { name: "Save object" }).click();
+  await expect(
+    page.getByText("Object saved. Application behavior updated.", {
+      exact: true,
+    }),
+  ).toBeVisible();
+  await page
+    .getByRole("button", { name: "Layout editor", exact: true })
+    .click();
+  await page
+    .getByRole("combobox", { name: "Connection", exact: true })
+    .selectOption(String(id));
+  await page
+    .getByRole("combobox", { name: "Table", exact: true })
+    .selectOption("lookup_orders");
+  await expect(
+    page.getByLabel("person_id control", { exact: true }),
+  ).toHaveCount(0);
+  await page.getByLabel("id showInList", { exact: true }).uncheck();
+  await page.getByLabel("person_id showInList", { exact: true }).uncheck();
+  await page.getByLabel("title listOrder", { exact: true }).fill("1");
+  await page.getByLabel("joined_1 listOrder", { exact: true }).fill("0");
   await page.getByLabel("joined_2 showInList", { exact: true }).uncheck();
-  await page.getByRole("button", { name: "Save layout" }).click();
+  await page.getByRole("button", { name: "Save layout", exact: true }).click();
   await expect(page.getByText("Layout saved.", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Data browser" }).click();
   await page
@@ -642,7 +671,7 @@ test("list columns and read-only joins refresh when a lookup changes", async ({
     .click();
   await expect(row).toHaveCount(0);
   // Reopen configuration to prove virtual fields and independent list settings persisted.
-  await page.getByRole("button", { name: "Editor layouts" }).click();
+  await page.getByRole("button", { name: "Object editor" }).click();
   await page
     .getByRole("combobox", { name: "Connection", exact: true })
     .selectOption(String(id));
@@ -652,12 +681,21 @@ test("list columns and read-only joins refresh when a lookup changes", async ({
   await expect(page.getByLabel("joined_1 label", { exact: true })).toHaveValue(
     "Customer email",
   );
+  await page
+    .getByRole("button", { name: "Layout editor", exact: true })
+    .click();
+  await page
+    .getByRole("combobox", { name: "Connection", exact: true })
+    .selectOption(String(id));
+  await page
+    .getByRole("combobox", { name: "Table", exact: true })
+    .selectOption("lookup_orders");
   await expect(
     page.getByLabel("joined_2 showInList", { exact: true }),
   ).not.toBeChecked();
   await page.getByLabel("title showInList", { exact: true }).uncheck();
   await page.getByLabel("joined_1 showInList", { exact: true }).uncheck();
-  await page.getByRole("button", { name: "Save layout" }).click();
+  await page.getByRole("button", { name: "Save layout", exact: true }).click();
   await expect(page.getByText("Layout saved.", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Data browser" }).click();
   await expect(
@@ -704,7 +742,7 @@ test("required layout fields block empty creates and updates", async ({
     },
   );
   await page.reload();
-  await page.getByRole("button", { name: "Editor layouts" }).click();
+  await page.getByRole("button", { name: "Object editor" }).click();
   await page
     .getByRole("combobox", { name: "Connection", exact: true })
     .selectOption(String(id));
@@ -713,10 +751,14 @@ test("required layout fields block empty creates and updates", async ({
     .selectOption("z_required_records");
   await expect(page.getByLabel("id required", { exact: true })).toBeDisabled();
   await page.getByLabel("title required", { exact: true }).check();
-  await page.getByRole("button", { name: "Save layout" }).click();
-  await expect(page.getByText("Layout saved.", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Save object" }).click();
+  await expect(
+    page.getByText("Object saved. Application behavior updated.", {
+      exact: true,
+    }),
+  ).toBeVisible();
   await page.reload();
-  await page.getByRole("button", { name: "Editor layouts" }).click();
+  await page.getByRole("button", { name: "Object editor" }).click();
   await page
     .getByRole("combobox", { name: "Connection", exact: true })
     .selectOption(String(id));
@@ -799,7 +841,7 @@ test("layout labels, default sorting and filters persist and constrain search", 
     },
   );
   await page.reload();
-  await page.getByRole("button", { name: "Editor layouts" }).click();
+  await page.getByRole("button", { name: "Object editor" }).click();
   await page
     .getByRole("combobox", { name: "Connection", exact: true })
     .selectOption(String(id));
@@ -826,10 +868,14 @@ test("layout labels, default sorting and filters persist and constrain search", 
     .getByLabel("Filter 2 condition", { exact: true })
     .selectOption("gte");
   await page.getByLabel("Filter 2 value", { exact: true }).fill("10");
-  await page.getByRole("button", { name: "Save layout", exact: true }).click();
-  await expect(page.getByText("Layout saved.", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Save object", exact: true }).click();
+  await expect(
+    page.getByText("Object saved. Application behavior updated.", {
+      exact: true,
+    }),
+  ).toBeVisible();
   await page.reload();
-  await page.getByRole("button", { name: "Editor layouts" }).click();
+  await page.getByRole("button", { name: "Object editor" }).click();
   await page
     .getByRole("combobox", { name: "Connection", exact: true })
     .selectOption(String(id));

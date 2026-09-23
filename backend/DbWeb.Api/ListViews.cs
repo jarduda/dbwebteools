@@ -25,13 +25,26 @@ public partial class DatabaseService
 {
     static readonly JsonSerializerOptions LayoutJson = new() { PropertyNameCaseInsensitive = true };
 
-    public static LayoutDefinition Layout(string? json)
-    {
-        using var document = JsonDocument.Parse(json ?? "[]");
-        return ParseLayout(document.RootElement);
-    }
+    public static LayoutDefinition Layout(string? json) =>
+        ObjectModel.Merge(ObjectModel.Stored(json));
+
+    public static ObjectDefinition Object(string? json) => ObjectModel.Stored(json).Object;
+
+    public static LayoutPresentation Presentation(string? json) => ObjectModel.Stored(json).Layout;
 
     public static LayoutDefinition ParseLayout(JsonElement json)
+    {
+        // Compatibility for API clients that still submit the former combined layout shape.
+        if (
+            json.ValueKind == JsonValueKind.Object
+            && json.EnumerateObject()
+                .Any(p => p.Name.Equals("object", StringComparison.OrdinalIgnoreCase))
+        )
+            return ObjectModel.Merge(json.Deserialize<StoredObjectDefinition>(LayoutJson)!);
+        return ParseLegacyLayout(json);
+    }
+
+    public static LayoutDefinition ParseLegacyLayout(JsonElement json)
     {
         try
         {
@@ -42,12 +55,12 @@ public partial class DatabaseService
                     ? json.Deserialize<LayoutDefinition>(LayoutJson)
                 : null;
             if (result?.Fields == null || result.Fields.Any(f => f == null))
-                throw new ApiError(400, "Layout fields are required.");
+                throw new ApiError(400, "Object fields are required.");
             return result;
         }
         catch (JsonException)
         {
-            throw new ApiError(400, "Invalid layout configuration.");
+            throw new ApiError(400, "Invalid object configuration.");
         }
     }
 

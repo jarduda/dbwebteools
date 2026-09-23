@@ -487,7 +487,7 @@ public static class SchemaDesigner
                                 Lookup: lookup
                             )
                         );
-                        layout.FieldsJson = JsonSerializer.Serialize(definitionLayout);
+                        layout.FieldsJson = ObjectModel.Serialize(definitionLayout);
                     }
                     db.Audit.Add(
                         new()

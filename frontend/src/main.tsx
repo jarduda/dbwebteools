@@ -1,4 +1,4 @@
-import { SchemaEditor } from "./schema-editor";
+import { ObjectEditor } from "./object-editor";
 import { SEARCH_DELAY_MS } from "./search";
 import React, { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
@@ -35,19 +35,10 @@ import {
   type PageSummary,
 } from "./api";
 import "./style.css";
-import { JoinConfiguration, listColumns } from "./layout-fields";
-import { ListViewEditor, filterSummary } from "./list-view";
-import {
-  DropdownConfiguration,
-  dropdownError,
-  widgetFor,
-  temporalInput,
-  cellText,
-} from "./field-controls";
-import { LookupConfiguration, LookupInput } from "./lookups";
-import { CreationDefaultEditor } from "./creation-defaults";
-import { FormulaValidator } from "./formula-validator";
-import { SumupConfiguration } from "./sumups";
+import { listColumns } from "./layout-fields";
+import { filterSummary } from "./list-view";
+import { widgetFor, temporalInput, cellText } from "./field-controls";
+import { LookupInput } from "./lookups";
 import { PageEditor } from "./page-editor";
 import {
   PageCell,
@@ -205,9 +196,9 @@ function App() {
             {[
               ["users", "Users & roles", Users],
               ["connections", "Connections", Database],
-              ["schema", "Table designer", Table2],
+              ["objects", "Object editor", Table2],
               ["permissions", "Table access", ShieldCheck],
-              ["layouts", "Editor layouts", Settings2],
+              ["layouts", "Layout editor", Settings2],
               ["pages", "Page editor", Table2],
               ["audit", "Activity log", Activity],
             ].map(([key, label, Icon]) => (
@@ -271,8 +262,8 @@ function App() {
               route={pageRoute}
               editor={RecordEditor}
             />
-          ) : view === "schema" && user.isAdmin ? (
-            <SchemaEditor
+          ) : view === "objects" && user.isAdmin ? (
+            <ObjectEditor
               connections={connections}
               onChanged={() => setSchemaRevision((v) => v + 1)}
             />
@@ -1344,8 +1335,6 @@ function Admin({
     }),
     [fieldAccess, setFieldAccess] = useState<Grant["fields"]>(null),
     [fields, setFields] = useState<Field[]>([]),
-    [layoutColumns, setLayoutColumns] = useState<Column[]>([]),
-    [listView, setListView] = useState<ListView>({}),
     [layoutLoading, setLayoutLoading] = useState(false),
     [message, setMessage] = useState(""),
     [busy, setBusy] = useState(false);
@@ -1391,22 +1380,18 @@ function Admin({
     setFieldAccess(g?.fields ?? null);
     let active = true;
     setFields([]);
-    setListView({});
-    setLayoutColumns([]);
     setLayoutLoading(!!table && ["layouts", "permissions"].includes(view));
     if (table && ["layouts", "permissions"].includes(view))
       Promise.all([
         api<{ columns: Column[] }>(
           `/connections/${connection}/tables/${encodeURIComponent(table)}/schema`,
         ),
-        api<{ fields: Field[]; view: ListView }>(
+        api<{ fields: Field[] }>(
           `/connections/${connection}/tables/${encodeURIComponent(table)}/settings`,
         ),
       ])
         .then(([p, s]) => {
           if (active) {
-            setLayoutColumns(p.columns);
-            setListView(s.view || {});
             setFields([
               ...p.columns.map(
                 (c, i) =>
@@ -1438,7 +1423,7 @@ function Admin({
     users: "Users & roles",
     connections: "Database connections",
     permissions: "Table access",
-    layouts: "Editor layouts",
+    layouts: "Layout editor",
     audit: "Activity log",
   };
   async function action(fn: () => Promise<unknown>, msg: string) {
@@ -1783,565 +1768,119 @@ function Admin({
             </>
           ) : (
             <>
-              <h2>Record and list layout</h2>
-              {!layoutLoading && (
-                <ListViewEditor
-                  value={listView}
-                  columns={layoutColumns}
-                  fields={fields}
-                  change={setListView}
-                />
-              )}
+              <h2>Editor and list layout</h2>
               <p>
-                Customize labels, sections, order, visibility, and field
-                controls. List visibility is independent of editor visibility.
-                Required fields must be filled before creating or updating a
-                record. Hidden, read-only, and generated fields cannot be marked
-                required. Creation defaults fill new records only; explicit
-                values, parent relations, and lookup copies take precedence.
-                Database defaults remain unchanged.
+                Control only field order and visibility. Labels, sections,
+                controls, validation, relationships, defaults, formulas, joins,
+                filters and sorting are defined in Object editor.
               </p>
-              <div className="table-scroll">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Column</th>
-                      <th>Field label</th>
-                      <th>Section</th>
-                      <th>Order</th>
-                      <th>Control</th>
-                      <th>Hide in editor</th>
-                      <th>Read-only</th>
-                      <th>Required</th>
-                      <th>Show in list</th>
-                      <th>List order</th>
-                      <th>Creation default</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {fields.map((f, i) => (
-                      <tr key={f.name}>
-                        <td>
-                          {f.name}
-                          {f.widget === "formula" && (
-                            <span className="badge">Formula</span>
-                          )}
-                          {f.widget === "join" && (
-                            <span className="badge">Joined</span>
-                          )}
-                        </td>
-                        {(
-                          [
-                            "label",
-                            "section",
-                            "order",
-                            "widget",
-                            "hidden",
-                            "readOnly",
-                          ] as const
-                        ).map((k) => (
-                          <td key={k}>
-                            {k === "widget" ? (
-                              <select
-                                aria-label={`${f.name} control`}
-                                value={f[k]}
-                                disabled={["join", "formula"].includes(
-                                  f.widget,
-                                )}
-                                onChange={(e) =>
-                                  setFields(
-                                    fields.map((x, j) =>
-                                      j === i
-                                        ? {
-                                            ...x,
-                                            [k]: e.target.value,
-                                            creationDefault:
-                                              e.target.value === "sumup"
-                                                ? null
-                                                : x.creationDefault,
-                                            sumup:
-                                              e.target.value === "sumup"
-                                                ? x.sumup
-                                                : undefined,
-                                            readOnly:
-                                              e.target.value === "sumup" ||
-                                              (x.widget !== "sumup" &&
-                                                x.readOnly),
-                                            required:
-                                              e.target.value === "sumup"
-                                                ? false
-                                                : x.required,
-                                            lookup:
-                                              e.target.value === "lookup"
-                                                ? x.lookup
-                                                : undefined,
-                                            options:
-                                              e.target.value === "dropdown"
-                                                ? x.options || []
-                                                : undefined,
-                                          }
-                                        : x,
-                                    ),
-                                  )
-                                }
-                              >
-                                {f.widget === "formula" && (
-                                  <option value="formula">
-                                    Formula (read-only)
-                                  </option>
-                                )}
-                                {f.widget === "formula" && (
-                                  <span className="badge">Formula</span>
-                                )}
-                                {f.widget === "join" && (
-                                  <option value="join">
-                                    Joined (read-only)
-                                  </option>
-                                )}
-                                {layoutColumns.some(
-                                  (c) =>
-                                    c.name === f.name &&
-                                    !c.primaryKey &&
-                                    !c.autoIncrement &&
-                                    !c.generated &&
-                                    [
-                                      "tinyint",
-                                      "smallint",
-                                      "mediumint",
-                                      "int",
-                                      "bigint",
-                                      "decimal",
-                                    ].includes(c.type),
-                                ) && (
-                                  <option value="sumup">
-                                    Sum-up (stored total)
-                                  </option>
-                                )}
-                                {[
-                                  "auto",
-                                  "text",
-                                  "textarea",
-                                  "number",
-                                  "date",
-                                  "datetime",
-                                  "dropdown",
-                                  "checkbox",
-                                  "lookup",
-                                ].map((w) => (
-                                  <option key={w} value={w}>
-                                    {w === "datetime"
-                                      ? "DateTime"
-                                      : w === "date"
-                                        ? "Date"
-                                        : w === "dropdown"
-                                          ? "Dropdown"
-                                          : w}
-                                  </option>
-                                ))}
-                              </select>
-                            ) : (
-                              <input
-                                aria-label={`${f.name} ${k}`}
-                                disabled={
-                                  ["join", "formula", "sumup"].includes(
-                                    f.widget,
-                                  ) && k === "readOnly"
-                                }
-                                type={
-                                  k === "hidden" || k === "readOnly"
-                                    ? "checkbox"
-                                    : k === "order"
-                                      ? "number"
-                                      : "text"
-                                }
-                                checked={
-                                  typeof f[k] === "boolean"
-                                    ? Boolean(f[k])
-                                    : undefined
-                                }
-                                value={
-                                  typeof f[k] === "boolean"
-                                    ? undefined
-                                    : String(f[k])
-                                }
-                                onChange={(e) =>
-                                  setFields(
-                                    fields.map((x, j) =>
-                                      j === i
-                                        ? {
-                                            ...x,
-                                            required:
-                                              (k === "hidden" ||
-                                                k === "readOnly") &&
-                                              e.target.checked
-                                                ? false
-                                                : x.required,
-                                            [k]:
-                                              k === "hidden" || k === "readOnly"
-                                                ? e.target.checked
-                                                : k === "order"
-                                                  ? Number(e.target.value)
-                                                  : e.target.value,
-                                          }
-                                        : x,
-                                    ),
-                                  )
-                                }
-                              />
-                            )}
-                          </td>
-                        ))}
-                        <td>
-                          <input
-                            type="checkbox"
-                            aria-label={`${f.name} required`}
-                            checked={!!f.required}
-                            disabled={
-                              f.hidden ||
-                              f.readOnly ||
-                              f.widget === "join" ||
-                              layoutColumns.some(
-                                (c) =>
-                                  c.name === f.name &&
-                                  (c.generated || c.autoIncrement),
-                              )
-                            }
-                            onChange={(e) =>
-                              setFields((old) =>
-                                old.map((x) =>
-                                  x.name === f.name
-                                    ? { ...x, required: e.target.checked }
-                                    : x,
-                                ),
-                              )
-                            }
-                          />
-                        </td>
-                        <td>
-                          <input
-                            type="checkbox"
-                            aria-label={`${f.name} showInList`}
-                            checked={f.showInList !== false}
-                            onChange={(e) =>
-                              setFields((old) =>
-                                old.map((x) =>
-                                  x.name === f.name
-                                    ? { ...x, showInList: e.target.checked }
-                                    : x,
-                                ),
-                              )
-                            }
-                          />
-                        </td>
-                        <td>
-                          <input
-                            type="number"
-                            aria-label={`${f.name} listOrder`}
-                            value={f.listOrder ?? f.order}
-                            onChange={(e) =>
-                              setFields((old) =>
-                                old.map((x) =>
-                                  x.name === f.name
-                                    ? {
-                                        ...x,
-                                        listOrder: Number(e.target.value),
-                                      }
-                                    : x,
-                                ),
-                              )
-                            }
-                          />
-                        </td>
-                        <td>
-                          <CreationDefaultEditor
-                            field={f}
-                            column={layoutColumns.find(
-                              (c) => c.name === f.name,
-                            )}
-                            change={(creationDefault) =>
-                              setFields((old) =>
-                                old.map((x) =>
-                                  x.name === f.name
-                                    ? { ...x, creationDefault }
-                                    : x,
-                                ),
-                              )
-                            }
-                          />
-                        </td>
+              {layoutLoading ? (
+                <p role="status">Loading layout…</p>
+              ) : (
+                <div className="table-scroll">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Field</th>
+                        <th>Object label</th>
+                        <th>Editor order</th>
+                        <th>Show in editor</th>
+                        <th>List order</th>
+                        <th>Show in list</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              <button
-                type="button"
-                disabled={
-                  layoutLoading ||
-                  !fields.length ||
-                  fields.filter((f) => ["join", "formula"].includes(f.widget))
-                    .length >= 20
-                }
-                onClick={() => {
-                  let n = 1;
-                  while (
-                    fields.some((f) => f.name.toLowerCase() === `joined_${n}`)
-                  )
-                    n++;
-                  setFields((old) => [
-                    ...old,
-                    {
-                      name: `joined_${n}`,
-                      label: "Related value",
-                      section: "",
-                      order: old.length,
-                      hidden: false,
-                      readOnly: true,
-                      widget: "join",
-                      showInList: true,
-                      listOrder: old.length,
-                      join: {
-                        sourceColumn: "",
-                        table: "",
-                        keyColumn: "",
-                        valueColumn: "",
-                      },
-                    },
-                  ]);
-                }}
-              >
-                Add joined field
-              </button>
-              <button
-                type="button"
-                disabled={
-                  layoutLoading ||
-                  !fields.length ||
-                  fields.filter((f) => ["join", "formula"].includes(f.widget))
-                    .length >= 20
-                }
-                onClick={() => {
-                  let n = 1;
-                  while (
-                    fields.some((f) => f.name.toLowerCase() === `formula_${n}`)
-                  )
-                    n++;
-                  setFields((old) => [
-                    ...old,
-                    {
-                      name: `formula_${n}`,
-                      label: "Calculated value",
-                      section: "",
-                      order: old.length,
-                      hidden: false,
-                      readOnly: true,
-                      widget: "formula",
-                      formula: "",
-                      showInList: true,
-                    },
-                  ]);
-                }}
-              >
-                Add formula field
-              </button>
-              {fields
-                .filter((f) => f.widget === "formula")
-                .map((f) => (
-                  <fieldset
-                    className="lookup-config formula-config"
-                    key={f.name}
-                  >
-                    <legend>{f.name} formula</legend>
-                    <FormulaValidator
-                      connection={connection}
-                      table={table}
-                      field={f}
-                      fields={fields}
-                    />
-                    <label>
-                      Expression
-                      <textarea
-                        aria-label={`${f.name} expression`}
-                        maxLength={1024}
-                        value={f.formula || ""}
-                        onChange={(e) =>
-                          setFields((old) =>
-                            old.map((x) =>
-                              x.name === f.name
-                                ? { ...x, formula: e.target.value }
-                                : x,
-                            ),
-                          )
-                        }
-                      />
-                    </label>
-                    <p>
-                      Calculated on the server; never saved as a database
-                      column. Use stored columns in square brackets. Examples:{" "}
-                      <code>Round([price] * [quantity], 2)</code> or{" "}
-                      <code>Concat(Upper([name]), ' — ', [code])</code>.
-                    </p>
-                    <p>
-                      Math: + − * / %, Round, Abs, Floor, Ceiling, Min, Max.
-                      Text: Concat, Upper, Lower, Trim, Length, Substring(text,
-                      start, length), Replace. Also: Coalesce(value, fallback),
-                      if(condition, yes, no). Function names are case-sensitive;
-                      substring starts at zero.
-                    </p>
-                    <p>
-                      Dropdown labels:{" "}
-                      <code>DropdownDisplay('status', [status])</code> resolves
-                      a key using the named dropdown in this layout. Use the
-                      column name, not its label. NULL or unknown keys return
-                      NULL; use{" "}
-                      <code>
-                        Coalesce(DropdownDisplay('status', [status]), 'Unknown')
-                      </code>{" "}
-                      for a fallback.
-                    </p>
-                    <p>
-                      Available columns:{" "}
-                      {layoutColumns.map((c) => `[${c.name}]`).join(", ")}
-                    </p>
-                    <button
-                      type="button"
-                      aria-label={`Remove ${f.name}`}
-                      onClick={() =>
-                        setFields((old) => old.filter((x) => x.name !== f.name))
-                      }
-                    >
-                      Remove formula field
-                    </button>
-                  </fieldset>
-                ))}
-              {fields
-                .filter((f) => f.widget === "join")
-                .map((f) => (
-                  <JoinConfiguration
-                    key={`${connection}/${table}/${f.name}`}
-                    field={f}
-                    connection={connection}
-                    tables={tables}
-                    sources={fields
-                      .filter((x) => !["join", "formula"].includes(x.widget))
-                      .map((x) => x.name)}
-                    change={(join) =>
-                      setFields((old) =>
-                        old.map((x) =>
-                          x.name === f.name ? { ...x, join } : x,
-                        ),
-                      )
-                    }
-                    remove={() =>
-                      setFields((old) => old.filter((x) => x.name !== f.name))
-                    }
-                  />
-                ))}
-              {fields
-                .filter((f) => f.widget === "dropdown")
-                .map((f) => (
-                  <DropdownConfiguration
-                    key={`${connection}/${table}/${f.name}`}
-                    name={f.name}
-                    options={f.options || []}
-                    change={(options) =>
-                      setFields((old) =>
-                        old.map((x) =>
-                          x.name === f.name ? { ...x, options } : x,
-                        ),
-                      )
-                    }
-                  />
-                ))}
-              {fields
-                .filter((f) => f.widget === "sumup")
-                .map((f) => (
-                  <SumupConfiguration
-                    key={`${connection}/${table}/${f.name}`}
-                    name={f.name}
-                    connection={connection}
-                    table={table}
-                    value={f.sumup}
-                    change={(sumup) =>
-                      setFields((old) =>
-                        old.map((x) =>
-                          x.name === f.name ? { ...x, sumup } : x,
-                        ),
-                      )
-                    }
-                  />
-                ))}
-              {fields.some((f) => f.widget === "sumup") && (
-                <button
-                  disabled={busy || layoutLoading}
-                  onClick={() =>
-                    action(
-                      () =>
-                        api(
-                          `/admin/connections/${connection}/tables/${encodeURIComponent(table)}/sumups/recalculate`,
-                          "POST",
-                        ),
-                      "Sum-ups recalculated from all existing child records.",
-                    )
-                  }
-                >
-                  Recalculate saved sum-ups
-                </button>
+                    </thead>
+                    <tbody>
+                      {fields.map((field) => (
+                        <tr key={field.name}>
+                          <td>{field.name}</td>
+                          <td>{field.label || field.name}</td>
+                          <td>
+                            <input
+                              type="number"
+                              aria-label={`${field.name} editorOrder`}
+                              value={field.order}
+                              onChange={(event) =>
+                                setFields((old) =>
+                                  old.map((item) =>
+                                    item.name === field.name
+                                      ? {
+                                          ...item,
+                                          order: Number(event.target.value),
+                                        }
+                                      : item,
+                                  ),
+                                )
+                              }
+                            />
+                          </td>
+                          <td>
+                            <input
+                              type="checkbox"
+                              aria-label={`${field.name} showInEditor`}
+                              checked={!field.hidden}
+                              disabled={!!field.required}
+                              onChange={(event) =>
+                                setFields((old) =>
+                                  old.map((item) =>
+                                    item.name === field.name
+                                      ? {
+                                          ...item,
+                                          hidden: !event.target.checked,
+                                        }
+                                      : item,
+                                  ),
+                                )
+                              }
+                            />
+                          </td>
+                          <td>
+                            <input
+                              type="number"
+                              aria-label={`${field.name} listOrder`}
+                              value={field.listOrder ?? field.order}
+                              onChange={(event) =>
+                                setFields((old) =>
+                                  old.map((item) =>
+                                    item.name === field.name
+                                      ? {
+                                          ...item,
+                                          listOrder: Number(event.target.value),
+                                        }
+                                      : item,
+                                  ),
+                                )
+                              }
+                            />
+                          </td>
+                          <td>
+                            <input
+                              type="checkbox"
+                              aria-label={`${field.name} showInList`}
+                              checked={field.showInList !== false}
+                              onChange={(event) =>
+                                setFields((old) =>
+                                  old.map((item) =>
+                                    item.name === field.name
+                                      ? {
+                                          ...item,
+                                          showInList: event.target.checked,
+                                        }
+                                      : item,
+                                  ),
+                                )
+                              }
+                            />
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               )}
-              {fields
-                .filter((f) => f.widget === "lookup")
-                .map((f) => (
-                  <LookupConfiguration
-                    key={`${connection}/${table}/${f.name}`}
-                    name={f.name}
-                    connection={connection}
-                    tables={tables}
-                    destinations={layoutColumns.filter(
-                      (c) =>
-                        !fields.some(
-                          (x) =>
-                            x.name === c.name &&
-                            ["lookup", "sumup"].includes(x.widget),
-                        ),
-                    )}
-                    value={f.lookup}
-                    change={(lookup) =>
-                      setFields((old) =>
-                        old.map((x) =>
-                          x.name === f.name ? { ...x, lookup } : x,
-                        ),
-                      )
-                    }
-                  />
-                ))}
               <button
                 className="primary"
                 disabled={
-                  !table ||
-                  busy ||
-                  layoutLoading ||
-                  fields.length === 0 ||
-                  fields.some(
-                    (f) =>
-                      f.widget === "sumup" &&
-                      (!f.sumup?.childTable ||
-                        !f.sumup?.lookupField ||
-                        (f.sumup?.operation === "sum" &&
-                          !f.sumup?.sourceField)),
-                  ) ||
-                  fields.some(
-                    (f) =>
-                      f.widget === "join" &&
-                      (!f.join?.sourceColumn ||
-                        !f.join?.table ||
-                        !f.join?.keyColumn ||
-                        !f.join?.valueColumn),
-                  ) ||
-                  fields.some(
-                    (f) =>
-                      f.widget === "dropdown" &&
-                      !!dropdownError(f.options || []),
-                  )
+                  !table || busy || layoutLoading || fields.length === 0
                 }
                 onClick={() =>
                   action(
@@ -2350,13 +1889,16 @@ function Admin({
                         `/admin/connections/${connection}/tables/${encodeURIComponent(table)}/layout`,
                         "PUT",
                         {
-                          fields,
-                          view: { ...listView, label: listView.label?.trim() },
+                          fields: fields.map((field) => ({
+                            name: field.name,
+                            editorOrder: field.order,
+                            showInEditor: !field.hidden,
+                            showInList: field.showInList !== false,
+                            listOrder: field.listOrder ?? field.order,
+                          })),
                         },
                       ),
-                    fields.some((f) => f.widget === "sumup")
-                      ? "Layout saved. Sum-ups initialized."
-                      : "Layout saved.",
+                    "Layout saved.",
                   )
                 }
               >

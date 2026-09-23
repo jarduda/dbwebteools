@@ -114,6 +114,23 @@ export type Field = {
   required?: boolean;
   formula?: string | null;
 };
+export type ObjectField = Omit<
+  Field,
+  "order" | "hidden" | "showInList" | "listOrder"
+>;
+export type ObjectDefinition = {
+  fields: ObjectField[];
+  view?: ListView | null;
+  sumupsPending?: boolean;
+};
+export type FieldPresentation = {
+  name: string;
+  editorOrder: number;
+  showInEditor: boolean;
+  showInList: boolean;
+  listOrder?: number | null;
+};
+export type LayoutPresentation = { fields: FieldPresentation[] };
 export type Grant = {
   fields?: Record<string, "none" | "read" | "write"> | null;
   userId: number;
