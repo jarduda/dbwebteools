@@ -9,7 +9,7 @@ A responsive MariaDB record-management workspace with a separate **ASP.NET Core 
 - Users, administrator/member roles, disable accounts, reset passwords, and revoke active sessions on account changes.
 - Multiple database connections with encrypted passwords, connection testing, verified TLS by default.
 - Deny-by-default table permissions plus per-user field-level No access / Read / Write, enforced by the API.
-- Visual editing layouts: field labels, sections, order, Date/DateTime controls, keyed text dropdowns, hidden/read-only fields.
+- Visual object and layout editing: database fields, labels, controls and behavior in one object list; editor sections, order and visibility in the layout.
 - Configurable related-table lookups: searchable selection dialogs, friendly labels, and key-only storage.
 - Recent record-change activity without recording sensitive field values.
 - Responsive interface, keyboard-accessible dialogs, loading states, inline errors, and deletion confirmation.
@@ -86,7 +86,7 @@ Save the object to activate defaults for new records only. Defaults appear when 
 
 ## List fields and read-only joined fields
 
-In **Administration → Layout editor**, use **Show in list** and **List order** for record lists, and **Show in editor** and **Editor order** for forms/pages. Labels and editor sections are defined in Object editor and are shown read-only in Layout editor. Existing layouts without list settings keep all columns visible. Hidden primary keys remain available internally for correct editing/deletion. Selecting no list fields shows an explicit empty-column notice, without changing data access permissions.
+In **Administration → Layout editor**, use **Editor section**, **Show in editor**, and **Editor order** for forms/pages, plus **Show in list** and **List order** for record lists. Labels and behavior are defined in Object editor. Existing layouts without list settings keep all columns visible. Hidden primary keys remain available internally for correct editing/deletion. Selecting no list fields shows an explicit empty-column notice, without changing data access permissions.
 
 Choose **Add joined field** to display a value from another table without adding a physical database column. Configure:
 
@@ -137,7 +137,7 @@ To exercise real MariaDB CRUD locally, set `MARIADB_TEST_CONNECTION` to a connec
 Use **Administration → Page editor** to create pages:
 
 1. Choose a name, connection, main table, and **List drill-down column**. Make that column visible in the table's list layout. It becomes a link to the selected record's page. Multiple pages may use the same table with different drill-down columns.
-2. The main record uses the **Object definition** for labels, sections, controls, lookup/dropdown labels, joined values, formulas and validation, then applies **Layout editor** order and visibility. Authorized users can open the existing record editor from the page.
+2. The main record uses the **Object definition** for labels, controls, lookup/dropdown labels, joined values, formulas and validation, then applies **Layout editor** sections, order and visibility. Authorized users can open the existing record editor from the page.
 3. Add **related tabs**. Choose a related table and an **Object lookup relation** from that table’s Object definition which points to the main table (for example, an `orders.customer_id` lookup targeting `customers.id`). The key columns are derived from the current lookup definition, not entered separately. Choose and reorder the visible related columns; stored, joined, and formula fields are supported.
 4. Optionally choose a **destination page** for a related tab and the visible column that should link to it. Create destination pages first. Links can continue through further related tabs; composite primary keys and exact large numeric keys are supported.
 5. Save the page. Page definitions are stored in SQLite `app.db` → `Pages`, separately from record layouts. Startup applies an additive, idempotent schema upgrade to existing metadata databases without recreating them.
@@ -181,7 +181,7 @@ Selecting or reselecting a lookup (including the same record) repopulates its co
 
 Use **Validate formula** above each formula expression to check syntax, column references, and function arguments on the backend without saving the layout. Feedback appears above the expression and clears when the draft changes. Validation uses draft dropdown definitions too; valid syntax does not guarantee every record avoids runtime errors such as division by zero.
 
-Choose **Add formula field** to display a read-only calculation in the editor and/or list. Configure its label and section in Object editor, then its editor/list order and visibility in Layout editor. Formulas use stored column names in square brackets and are evaluated **only by the backend**, including debounced editor previews. They are never submitted as stored columns or included in record versions. They cannot be used for list sorting/filtering and cannot reference other formula/joined fields.
+Choose **Add formula field** to display a read-only calculation in the editor and/or list. Configure its label in Object editor, then its editor section, editor/list order and visibility in Layout editor. Formulas use stored column names in square brackets and are evaluated **only by the backend**, including debounced editor previews. They are never submitted as stored columns or included in record versions. They cannot be used for list sorting/filtering and cannot reference other formula/joined fields.
 
 Examples:
 
@@ -233,7 +233,7 @@ Authentication uses PBKDF2 password hashing through ASP.NET Core PasswordHasher,
 
 Table names and column identifiers are validated against `information_schema` and safely quoted. Values are parameters. Updates/deletes require the full primary key and a record version checked inside a transaction with `SELECT ... FOR UPDATE`. Tables without primary keys are read-only; views are not exposed. Large integer and decimal values are transported as strings to preserve precision; binary values use base64. Defaulted fields omitted from create requests retain their database default.
 
-Object definitions drive application behavior; layouts supply only editor/list order and visibility. Neither is column-level security. Use **Table access → Field access** for column-level security in addition to table grants. MariaDB transactional tables (InnoDB) are required for reliable concurrency guarantees. Foreign keys and database constraints are enforced by MariaDB. Object editor supports the documented safe subset of table/column schema changes; advanced migrations and file attachments remain outside this release. Application metadata currently uses a single SQLite instance; scale the application as a single replica. The Pages schema is installed with an additive idempotent upgrade; future schema changes must preserve existing metadata. The activity log and target database are separate stores, not a distributed atomic audit ledger.
+Object definitions drive application behavior; layouts supply editor sections, editor/list order and visibility. Neither is column-level security. Use **Table access → Field access** for column-level security in addition to table grants. MariaDB transactional tables (InnoDB) are required for reliable concurrency guarantees. Foreign keys and database constraints are enforced by MariaDB. Object editor supports the documented safe subset of table/column schema changes; advanced migrations and file attachments remain outside this release. Application metadata currently uses a single SQLite instance; scale the application as a single replica. The Pages schema is installed with an additive idempotent upgrade; future schema changes must preserve existing metadata. The activity log and target database are separate stores, not a distributed atomic audit ledger.
 
 ## CI/CD and contributing
 
@@ -255,7 +255,7 @@ In **Administration → Object editor**, choose a connection/table:
 - Set **List title** to replace the table name above the record list (optional).
 - Choose a **Default sort column** and **Ascending/Descending** direction. Primary keys are added as tie-breakers for stable pagination. Users can temporarily sort by clicking a list heading, then click **Use default sorting** to restore the saved order.
 - Click **Add filter**, select a stored field, condition, and value. Use **All criteria (AND)** or **Any criterion (OR)**. Save the object. Up to 20 criteria are supported. Filter and sort columns can be hidden later in Layout editor, but cannot be virtual joined fields.
-- Open **Layout editor** to configure only editor/list order and visibility for every stored or virtual object field.
+- Open **Layout editor** to configure editor section plus editor/list order and visibility for every stored or virtual object field.
 
 Filters are enforced on the records API before counting and pagination; free-text search is combined with the saved criteria, never substituted for them. The list displays its active filter. Create/update operations can produce records outside the current view; those records will disappear from that list after saving. Filters are list configuration, **not row-level security**, and do not constrain lookup selectors or change existing table permissions.
 
@@ -267,7 +267,7 @@ Object definitions and presentation layouts remain in `RecordLayout.FieldsJson` 
 
 Administrators can open **Object editor**, select a connection and choose **New table**. Each table is created as InnoDB/UTF-8 with a non-null auto-increment `BIGINT` primary key (`id` by default, with a configurable name). New tables become available in the data browser immediately. Non-admin users require the usual table/field grants; creating a table does not grant access to everyone.
 
-Use **Add column** for Text (length), Long text, Integer, Decimal number (total digits and decimal places), Boolean, Date, Date and time, or **Relation**. A relation selects another table's non-null single-column unique integer/text key and a display column. The designer copies the key's database type, signedness and character settings, creates an actual `FOREIGN KEY ... RESTRICT`, and adds a matching lookup field to the object definition without replacing its other behavior or presentation settings. Lookup search, selection, copy mappings and related-page configuration then work as usual. Foreign keys prevent orphan values and deletion of referenced parent records; no cascading deletes are introduced.
+The **Application object** table is the single list of physical database columns and virtual fields. Use **Add field** there for Text (length), Long text, Integer, Decimal number (total digits and decimal places), Boolean, Date, Date and time, or **Relation**. A relation selects another table's non-null single-column unique integer/text key and a display column. The designer copies the key's database type, signedness and character settings, creates an actual `FOREIGN KEY ... RESTRICT`, and adds matching lookup behavior without replacing other object or presentation settings. Lookup search, selection, copy mappings and related-page configuration then work as usual. Foreign keys prevent orphan values and deletion of referenced parent records; no cascading deletes are introduced.
 
 **Edit** changes supported existing columns' NULL allowance, text length, or decimal precision/places. Existing types/names, defaults, comments, character settings and indexes are preserved. Primary, generated and foreign-key columns are protected; unsupported special types must be managed with a database migration tool. This designer does not rename/drop columns, convert existing types or remove constraints. Decimal changes cannot reduce fractional digits or integer capacity. Text shortening is rejected if existing values do not fit, and NULL must be filled before making a column required. New columns on populated tables initially allow NULL; fill their values before making them required.
 

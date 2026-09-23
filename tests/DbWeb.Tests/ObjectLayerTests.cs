@@ -12,6 +12,50 @@ namespace DbWeb.Tests;
 public partial class ApiTests
 {
     [Fact]
+    public void FormerSplitMetadataMovesSectionFromObjectToLayout()
+    {
+        const string json = """
+            {
+              "Object": {
+                "Fields": [
+                  {
+                    "Name": "title", "Label": "Title", "Section": "Details",
+                    "ReadOnly": false, "Widget": "text"
+                  }
+                ]
+              },
+              "Layout": {
+                "Fields": [
+                  {
+                    "Name": "title", "EditorOrder": 2, "ShowInEditor": true,
+                    "ShowInList": true, "ListOrder": 4
+                  }
+                ]
+              }
+            }
+            """;
+
+        var stored = ObjectModel.Stored(json);
+        Assert.Equal("Details", Assert.Single(stored.Layout.Fields).Section);
+        var normalized = ObjectModel.Serialize(stored);
+        using var document = JsonDocument.Parse(normalized);
+        Assert.False(
+            document
+                .RootElement.GetProperty("Object")
+                .GetProperty("Fields")[0]
+                .TryGetProperty("Section", out _)
+        );
+        Assert.Equal(
+            "Details",
+            document
+                .RootElement.GetProperty("Layout")
+                .GetProperty("Fields")[0]
+                .GetProperty("Section")
+                .GetString()
+        );
+    }
+
+    [Fact]
     public void LegacyCombinedMetadataMigratesInPlaceAndRemainsEquivalent()
     {
         var options = new DbContextOptionsBuilder<AppDb>()
@@ -54,6 +98,20 @@ public partial class ApiTests
         using var document = JsonDocument.Parse(stored);
         Assert.True(document.RootElement.TryGetProperty("Object", out _));
         Assert.True(document.RootElement.TryGetProperty("Layout", out _));
+        Assert.False(
+            document
+                .RootElement.GetProperty("Object")
+                .GetProperty("Fields")[0]
+                .TryGetProperty("Section", out _)
+        );
+        Assert.Equal(
+            "Details",
+            document
+                .RootElement.GetProperty("Layout")
+                .GetProperty("Fields")[0]
+                .GetProperty("Section")
+                .GetString()
+        );
         var merged = DatabaseService.Layout(stored);
         var field = Assert.Single(merged.Fields);
         Assert.Equal("Friendly title", field.Label);
@@ -161,13 +219,13 @@ public partial class ApiTests
                 "Title label",
                 objectDefinition.Fields.Single(f => f.Name == "title").Label
             );
-            Assert.Equal("Content", objectDefinition.Fields.Single(f => f.Name == "title").Section);
             Assert.True(objectDefinition.Fields.Single(f => f.Name == "title").Required);
             Assert.Equal("Object list", objectDefinition.View!.Label);
             var presentation = (
                 await admin.GetFromJsonAsync<LayoutPresentation>(root + "/layout")
             )!;
             var titleLayout = presentation.Fields.Single(f => f.Name == "title");
+            Assert.Equal("Content", titleLayout.Section);
             Assert.Equal(2, titleLayout.EditorOrder);
             Assert.True(titleLayout.ShowInEditor);
             Assert.True(titleLayout.ShowInList);
@@ -176,9 +234,11 @@ public partial class ApiTests
             var objectJson = await admin.GetStringAsync(root + "/object");
             Assert.DoesNotContain("editorOrder", objectJson, StringComparison.OrdinalIgnoreCase);
             Assert.DoesNotContain("showInList", objectJson, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("section", objectJson, StringComparison.OrdinalIgnoreCase);
             var layoutJson = await admin.GetStringAsync(root + "/layout");
             Assert.DoesNotContain("widget", layoutJson, StringComparison.OrdinalIgnoreCase);
             Assert.DoesNotContain("label", layoutJson, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("section", layoutJson, StringComparison.OrdinalIgnoreCase);
 
             objectDefinition = objectDefinition with
             {
@@ -206,6 +266,7 @@ public partial class ApiTests
                 .Single(f => f.GetProperty("name").GetString() == "title");
             Assert.Equal("Object title", title.GetProperty("label").GetString());
             Assert.Equal("textarea", title.GetProperty("widget").GetString());
+            Assert.Equal("Content", title.GetProperty("section").GetString());
             Assert.Equal(2, title.GetProperty("order").GetInt32());
             Assert.Equal(4, title.GetProperty("listOrder").GetInt32());
 
@@ -217,6 +278,7 @@ public partial class ApiTests
                         f.Name == "title"
                             ? f with
                             {
+                                Section = "Summary",
                                 EditorOrder = 8,
                                 ShowInEditor = true,
                                 ShowInList = false,
@@ -239,8 +301,36 @@ public partial class ApiTests
                 .EnumerateArray()
                 .Single(f => f.GetProperty("name").GetString() == "title");
             Assert.Equal(8, title.GetProperty("order").GetInt32());
+            Assert.Equal("Summary", title.GetProperty("section").GetString());
             Assert.False(title.GetProperty("showInList").GetBoolean());
             Assert.Equal(9, title.GetProperty("listOrder").GetInt32());
+
+            // Presentation-only clients from the previous release omitted section.
+            // Their saves must retain the section instead of silently clearing it.
+            (
+                await admin.PutAsJsonAsync(
+                    root + "/layout",
+                    new
+                    {
+                        fields = presentation.Fields.Select(f => new
+                        {
+                            name = f.Name,
+                            editorOrder = f.EditorOrder,
+                            showInEditor = f.ShowInEditor,
+                            showInList = f.ShowInList,
+                            listOrder = f.ListOrder,
+                        }),
+                    }
+                )
+            ).EnsureSuccessStatusCode();
+            settings = await admin.GetFromJsonAsync<JsonElement>(
+                $"/api/connections/{connectionId}/tables/{table}/settings"
+            );
+            title = settings
+                .GetProperty("fields")
+                .EnumerateArray()
+                .Single(f => f.GetProperty("name").GetString() == "title");
+            Assert.Equal("Summary", title.GetProperty("section").GetString());
 
             Assert.Equal(
                 HttpStatusCode.BadRequest,

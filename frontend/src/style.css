@@ -354,6 +354,11 @@ main {
 .table-scroll {
   overflow: auto;
 }
+.database-field-details {
+  display: block;
+  margin-top: 0.2rem;
+  white-space: nowrap;
+}
 table {
   width: 100%;
   border-collapse: collapse;

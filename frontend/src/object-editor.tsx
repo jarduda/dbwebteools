@@ -200,6 +200,7 @@ export function ObjectEditor({
   }));
   const runtimeFields: Field[] = objectFields.map((field, index) => ({
     ...field,
+    section: "",
     order: index,
     hidden: false,
     showInList: true,
@@ -353,86 +354,10 @@ export function ObjectEditor({
         </form>
       )}
       {loading && <p role="status">Loading table structure…</p>}
-      {schema && !creating && (
-        <section className="card" aria-label="Table structure">
-          <div className="card-title">
-            <h2>{table}</h2>
-            <button
-              className="primary"
-              disabled={busy}
-              onClick={() => {
-                setDraft(blank());
-                setEditing(false);
-                setError("");
-                setMessage("");
-              }}
-            >
-              Add column
-            </button>
-          </div>
-          <div className="table-scroll">
-            <table>
-              <thead>
-                <tr>
-                  <th>Column</th>
-                  <th>Database type</th>
-                  <th>Allows NULL</th>
-                  <th>Relation / key</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {schema.columns.map((c) => (
-                  <tr key={c.name}>
-                    <td>{c.name}</td>
-                    <td>{c.sqlType}</td>
-                    <td>{c.nullable ? "Yes" : "No"}</td>
-                    <td>
-                      {c.primaryKey
-                        ? "Primary key"
-                        : c.relatedTable
-                          ? `${c.relatedTable}.${c.relatedKey}`
-                          : c.uniqueKey
-                            ? "Unique key"
-                            : "—"}
-                    </td>
-                    <td>
-                      <button
-                        disabled={busy || !!c.editBlocked}
-                        title={c.editBlocked || "Edit column parameters"}
-                        aria-label={`Edit column ${c.name}`}
-                        onClick={() => {
-                          setDraft({
-                            ...blank(),
-                            name: c.name,
-                            type: kind(c),
-                            nullable: c.nullable,
-                            length: c.length || 255,
-                            precision: c.precision || 18,
-                            scale: c.scale ?? 2,
-                          });
-                          setEditing(true);
-                          setError("");
-                          setMessage("");
-                        }}
-                      >
-                        Edit
-                      </button>
-                      {c.editBlocked && (
-                        <small className="muted"> {c.editBlocked}</small>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </section>
-      )}
       {draft && schema && !creating && (
         <form
           className="card schema-column-form"
-          aria-label={editing ? "Edit column" : "Add column"}
+          aria-label={editing ? "Edit database field" : "Add field"}
           onSubmit={(e) => {
             e.preventDefault();
             void run(async () => {
@@ -447,18 +372,18 @@ export function ObjectEditor({
                 editing
                   ? "Column parameters updated."
                   : draft.type === "relation"
-                    ? "Relation column created. Foreign key and object lookup configured."
-                    : "Column created.",
+                    ? "Relation field created. Foreign key and object lookup configured."
+                    : "Field created.",
               );
             });
           }}
         >
-          <h2>{editing ? "Edit column parameters" : "Add column"}</h2>
+          <h2>{editing ? "Edit database field" : "Add field"}</h2>
           <div className="form-grid">
             <label>
-              Column name
+              Field name
               <input
-                aria-label="Column name"
+                aria-label="Field name"
                 required
                 disabled={editing || busy}
                 pattern="[A-Za-z_][A-Za-z0-9_]{0,63}"
@@ -662,7 +587,7 @@ export function ObjectEditor({
               Cancel
             </button>
             <button className="primary" disabled={busy}>
-              {busy ? "Applying…" : editing ? "Save column" : "Create column"}
+              {busy ? "Applying…" : editing ? "Save field" : "Create field"}
             </button>
           </div>
         </form>
@@ -677,10 +602,22 @@ export function ObjectEditor({
               <h2>Application object</h2>
               <p className="muted">
                 Define validation, controls, relationships, defaults, formulas,
-                joins and aggregates. Order and visibility belong to Layout
-                editor.
+                joins and aggregates alongside their database definitions.
+                Sections, order and visibility belong to Layout editor.
               </p>
             </div>
+            <button
+              className="primary"
+              disabled={busy}
+              onClick={() => {
+                setDraft(blank());
+                setEditing(false);
+                setError("");
+                setMessage("");
+              }}
+            >
+              Add field
+            </button>
           </div>
           {objectLoading ? (
             <p role="status">Loading object definition…</p>
@@ -697,17 +634,21 @@ export function ObjectEditor({
                   <thead>
                     <tr>
                       <th>Field</th>
+                      <th>Database definition</th>
                       <th>Label</th>
-                      <th>Editor section</th>
                       <th>Control / behavior</th>
                       <th>Read-only</th>
                       <th>Required</th>
                       <th>Creation default</th>
+                      <th>Actions</th>
                     </tr>
                   </thead>
                   <tbody>
                     {objectFields.map((field) => {
                       const column = columns.find((c) => c.name === field.name);
+                      const schemaColumn = schema.columns.find(
+                        (c) => c.name === field.name,
+                      );
                       const virtual = ["join", "formula"].includes(
                         field.widget,
                       );
@@ -718,6 +659,27 @@ export function ObjectEditor({
                             {virtual && <span className="badge">Virtual</span>}
                           </td>
                           <td>
+                            {schemaColumn ? (
+                              <>
+                                <strong>{schemaColumn.sqlType}</strong>
+                                <small className="muted database-field-details">
+                                  {schemaColumn.nullable
+                                    ? "Allows NULL"
+                                    : "Required in database"}
+                                  {schemaColumn.primaryKey
+                                    ? " · Primary key"
+                                    : schemaColumn.relatedTable
+                                      ? ` · ${schemaColumn.relatedTable}.${schemaColumn.relatedKey}`
+                                      : schemaColumn.uniqueKey
+                                        ? " · Unique key"
+                                        : ""}
+                                </small>
+                              </>
+                            ) : (
+                              "Application-only"
+                            )}
+                          </td>
+                          <td>
                             <input
                               aria-label={`${field.name} label`}
                               maxLength={150}
@@ -725,18 +687,6 @@ export function ObjectEditor({
                               onChange={(e) =>
                                 updateField(field.name, {
                                   label: e.target.value,
-                                })
-                              }
-                            />
-                          </td>
-                          <td>
-                            <input
-                              aria-label={`${field.name} section`}
-                              maxLength={150}
-                              value={field.section}
-                              onChange={(e) =>
-                                updateField(field.name, {
-                                  section: e.target.value,
                                 })
                               }
                             />
@@ -854,6 +804,7 @@ export function ObjectEditor({
                             <CreationDefaultEditor
                               field={{
                                 ...field,
+                                section: "",
                                 order: 0,
                                 hidden: false,
                                 showInList: true,
@@ -863,6 +814,44 @@ export function ObjectEditor({
                                 updateField(field.name, { creationDefault })
                               }
                             />
+                          </td>
+                          <td>
+                            {schemaColumn ? (
+                              <>
+                                <button
+                                  disabled={busy || !!schemaColumn.editBlocked}
+                                  title={
+                                    schemaColumn.editBlocked ||
+                                    "Edit database field"
+                                  }
+                                  aria-label={`Edit field ${schemaColumn.name}`}
+                                  onClick={() => {
+                                    setDraft({
+                                      ...blank(),
+                                      name: schemaColumn.name,
+                                      type: kind(schemaColumn),
+                                      nullable: schemaColumn.nullable,
+                                      length: schemaColumn.length || 255,
+                                      precision: schemaColumn.precision || 18,
+                                      scale: schemaColumn.scale ?? 2,
+                                    });
+                                    setEditing(true);
+                                    setError("");
+                                    setMessage("");
+                                  }}
+                                >
+                                  Edit
+                                </button>
+                                {schemaColumn.editBlocked && (
+                                  <small className="muted">
+                                    {" "}
+                                    {schemaColumn.editBlocked}
+                                  </small>
+                                )}
+                              </>
+                            ) : (
+                              "Configured below"
+                            )}
                           </td>
                         </tr>
                       );
@@ -887,7 +876,6 @@ export function ObjectEditor({
                       {
                         name: `joined_${n}`,
                         label: "Related value",
-                        section: "",
                         readOnly: true,
                         widget: "join",
                         join: {
@@ -918,7 +906,6 @@ export function ObjectEditor({
                       {
                         name: `formula_${n}`,
                         label: "Calculated value",
-                        section: "",
                         readOnly: true,
                         widget: "formula",
                         formula: "",
