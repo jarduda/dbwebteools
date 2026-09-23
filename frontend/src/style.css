@@ -1253,59 +1253,59 @@ input[aria-readonly="true"] {
   overflow-anchor: none;
 }
 
-.schema-editor form.card {
+.object-editor form.card {
   padding: 24px;
   margin-top: 20px;
 }
-.schema-editor .form-grid {
+.object-editor .form-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 16px;
   margin: 18px 0;
 }
-.schema-editor .form-grid label {
+.object-editor .form-grid label {
   display: flex;
   flex-direction: column;
   gap: 6px;
   font-size: 13px;
   min-width: 0;
 }
-.schema-editor .form-grid input,
-.schema-editor .form-grid select {
+.object-editor .form-grid input,
+.object-editor .form-grid select {
   width: 100%;
   min-width: 0;
 }
-.schema-editor .check {
+.object-editor .check {
   display: flex;
   align-items: center;
   gap: 8px;
   font-size: 13px;
 }
-.schema-editor td small {
+.object-editor td small {
   display: block;
   max-width: 240px;
   white-space: normal;
 }
 @media (max-width: 640px) {
-  .schema-editor .form-grid {
+  .object-editor .form-grid {
     grid-template-columns: 1fr;
   }
-  .schema-editor form.card {
+  .object-editor form.card {
     padding: 16px;
   }
 }
-.schema-editor .card-title {
+.object-editor .card-title {
   flex-wrap: wrap;
   gap: 12px;
 }
-.schema-editor .card-title h2 {
+.object-editor .card-title h2 {
   flex: 1 1 200px;
   min-width: 0;
   overflow-wrap: anywhere;
 }
-.schema-editor .card-title button {
+.object-editor .card-title button {
   flex-shrink: 0;
 }
-.schema-editor td:last-child {
+.object-editor td:last-child {
   min-width: 230px;
 }

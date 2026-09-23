@@ -234,11 +234,11 @@ export function PageEditor({ connections }: { connections: Connection[] }) {
             </label>
           </div>
           <p>
-            The main object uses this table's <strong>Editor layout</strong>{" "}
-            (labels, sections, visibility, lookups, joined fields and formulas).
-            Make the drill-down column visible in the table's list layout.
-            Different pages for the same table must use different list
-            drill-down columns.
+            The main object uses this table's <strong>Object definition</strong>{" "}
+            for labels, sections, controls, lookups, joined fields and formulas,
+            then applies its <strong>Layout</strong> for order and visibility.
+            Make the drill-down column visible in the list layout. Different
+            pages for the same table must use different list drill-down columns.
           </p>
           {columns.length > 0 && !columns.some((c) => c.primaryKey) && (
             <p role="alert">
@@ -247,7 +247,7 @@ export function PageEditor({ connections }: { connections: Connection[] }) {
           )}
           <h2>Related objects</h2>
           <p>
-            Each tab uses a lookup from the related table’s Editor layout
+            Each tab uses a lookup from the related table’s Object definition
             pointing to this main table. Choose display columns in the order you
             want them shown.
           </p>
@@ -474,7 +474,7 @@ function RelatedTabEditor({
             ? `Parent ${parentTable}.${fields.find((f) => f.name === tab.lookupField)?.lookup?.keyColumn || tab.parentColumn} → ${tab.table}.${tab.lookupField}. Lookup copy mappings apply when creating records.`
             : tab.relatedColumn
               ? `Legacy mapping: ${tab.parentColumn} → ${tab.relatedColumn}. Select a lookup relation to enable record creation.`
-              : `Configure a lookup on this related table in Editor layouts, pointing to ${parentTable}, then select it here.`}
+              : `Configure a lookup on this related table in Object editor, pointing to ${parentTable}, then select it here.`}
         </p>
       </div>
       <fieldset className="visible-related-columns">

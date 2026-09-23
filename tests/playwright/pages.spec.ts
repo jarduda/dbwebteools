@@ -159,7 +159,7 @@ test("define pages and drill through related tabs with record keys and browser h
   );
   await page.reload();
   await page
-    .getByRole("button", { name: "Editor layouts", exact: true })
+    .getByRole("button", { name: "Object editor", exact: true })
     .click();
   await page
     .getByRole("combobox", { name: "Connection", exact: true })
@@ -185,9 +185,11 @@ test("define pages and drill through related tabs with record keys and browser h
         .getByLabel(`${field} sum-up source`, { exact: true })
         .selectOption("line_total");
   }
-  await page.getByRole("button", { name: "Save layout", exact: true }).click();
+  await page.getByRole("button", { name: "Save object", exact: true }).click();
   await expect(
-    page.getByText("Layout saved. Sum-ups initialized.", { exact: true }),
+    page.getByText("Object saved. Application behavior updated.", {
+      exact: true,
+    }),
   ).toBeVisible();
   const totals = async () =>
     page.evaluate(
@@ -630,7 +632,7 @@ test("define pages and drill through related tabs with record keys and browser h
   expect((await totals()).order_total).toBe("50.0000");
   expect((await totals()).order_count).toBe(1);
   await page
-    .getByRole("button", { name: "Editor layouts", exact: true })
+    .getByRole("button", { name: "Object editor", exact: true })
     .click();
   await page
     .getByRole("combobox", { name: "Connection", exact: true })

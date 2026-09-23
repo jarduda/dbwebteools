@@ -42,7 +42,7 @@ test("configure lookup copies and backend formula fields, create and replace rel
     },
   );
   await page.reload();
-  await page.getByRole("button", { name: "Editor layouts" }).click();
+  await page.getByRole("button", { name: "Object editor" }).click();
   await page
     .getByRole("combobox", { name: "Connection", exact: true })
     .selectOption(String(id));
@@ -104,10 +104,14 @@ test("configure lookup copies and backend formula fields, create and replace rel
   await page
     .getByLabel("formula_2 expression")
     .fill("Concat(Upper([description]), ' x', [quantity])");
-  await page.getByRole("button", { name: "Save layout", exact: true }).click();
-  await expect(page.getByText("Layout saved.", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Save object", exact: true }).click();
+  await expect(
+    page.getByText("Object saved. Application behavior updated.", {
+      exact: true,
+    }),
+  ).toBeVisible();
   await page.reload();
-  await page.getByRole("button", { name: "Editor layouts" }).click();
+  await page.getByRole("button", { name: "Object editor" }).click();
   await page
     .getByRole("combobox", { name: "Connection", exact: true })
     .selectOption(String(id));

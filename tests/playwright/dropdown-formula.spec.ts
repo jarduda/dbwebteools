@@ -65,7 +65,7 @@ test("dropdown display formula follows selection and saves only the key", async 
     },
   );
   await page.reload();
-  await page.getByRole("button", { name: "Editor layouts" }).click();
+  await page.getByRole("button", { name: "Object editor" }).click();
   await page
     .getByRole("combobox", { name: "Connection", exact: true })
     .selectOption(String(id));
@@ -81,8 +81,12 @@ test("dropdown display formula follows selection and saves only the key", async 
     .fill(
       "Concat('Status: ', Coalesce(DropdownDisplay('status', [status]), 'Unknown'))",
     );
-  await page.getByRole("button", { name: "Save layout", exact: true }).click();
-  await expect(page.getByText("Layout saved.", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Save object", exact: true }).click();
+  await expect(
+    page.getByText("Object saved. Application behavior updated.", {
+      exact: true,
+    }),
+  ).toBeVisible();
   await page.getByRole("button", { name: "Data browser", exact: true }).click();
   await page
     .getByRole("combobox", { name: "Connection", exact: true })

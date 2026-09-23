@@ -53,11 +53,12 @@ test("design tables, typed columns and a relation lookup, then create a related 
   );
   await page.reload();
   await page
-    .getByRole("button", { name: "Table designer", exact: true })
+    .getByRole("button", { name: "Object editor", exact: true })
     .click();
   await page
-    .getByLabel("Schema connection", { exact: true })
-    .selectOption(String(id));
+    .locator(".object-editor > .selectors select")
+    .first()
+    .selectOption({ label: "Schema browser" });
   const parent = "z_schema_parent_" + Date.now(),
     child = "z_schema_child_" + Date.now();
   async function createTable(name: string) {
@@ -116,9 +117,12 @@ test("design tables, typed columns and a relation lookup, then create a related 
     .getByLabel("Relation display column", { exact: true })
     .selectOption("name");
   await saveColumn();
-  await expect(page.getByRole("status")).toContainText(
-    "Foreign key and layout lookup configured",
-  );
+  await expect(
+    page.getByText(
+      "Relation column created. Foreign key and object lookup configured.",
+      { exact: true },
+    ),
+  ).toBeVisible();
   await page.setViewportSize({ width: 390, height: 844 });
   expect(
     await page.evaluate(
@@ -176,12 +180,16 @@ test("design tables, typed columns and a relation lookup, then create a related 
     page.getByRole("cell", { name: "12.3456", exact: true }),
   ).toBeVisible();
   await page
-    .getByRole("button", { name: "Table designer", exact: true })
+    .getByRole("button", { name: "Object editor", exact: true })
     .click();
   await page
-    .getByLabel("Schema connection", { exact: true })
-    .selectOption(String(id));
-  await page.getByLabel("Schema table", { exact: true }).selectOption(parent);
+    .locator(".object-editor > .selectors select")
+    .first()
+    .selectOption({ label: "Schema browser" });
+  await page
+    .locator(".object-editor > .selectors select")
+    .nth(1)
+    .selectOption(parent);
   await page
     .getByRole("button", { name: "Edit column name", exact: true })
     .click();
