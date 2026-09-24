@@ -235,8 +235,8 @@ export function PageEditor({ connections }: { connections: Connection[] }) {
           </div>
           <p>
             The main object uses this table's <strong>Object definition</strong>{" "}
-            for labels, sections, controls, lookups, joined fields and formulas,
-            then applies its <strong>Layout</strong> for order and visibility.
+            for controls, lookups, joined fields and formulas, then applies its{" "}
+            <strong>Layout</strong> for labels, sections, order and visibility.
             Make the drill-down column visible in the list layout. Different
             pages for the same table must use different list drill-down columns.
           </p>

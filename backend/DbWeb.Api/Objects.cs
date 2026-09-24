@@ -30,7 +30,8 @@ public record FieldPresentation(
     int EditorOrder = 0,
     bool ShowInEditor = true,
     bool ShowInList = true,
-    int? ListOrder = null
+    int? ListOrder = null,
+    string? Label = null
 );
 
 public record LayoutPresentation(List<FieldPresentation> Fields);
@@ -126,21 +127,52 @@ public static class ObjectModel
 
     static StoredObjectDefinition Normalize(StoredObjectDefinition stored)
     {
+        var legacyLabels = stored.Object.Fields.ToDictionary(
+            f => f.Name,
+            f => f.Label,
+            StringComparer.OrdinalIgnoreCase
+        );
         var names = stored
             .Object.Fields.Select(f => f.Name)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
         var layout = stored
             .Layout.Fields.Where(f => names.Contains(f.Name))
             .GroupBy(f => f.Name, StringComparer.OrdinalIgnoreCase)
-            .Select(g => g.First() with { Section = g.First().Section ?? "" })
+            .Select(g =>
+            {
+                var field = g.First();
+                return field with
+                {
+                    Section = field.Section ?? "",
+                    Label = field.Label == null
+                        ? legacyLabels.GetValueOrDefault(field.Name, field.Name)
+                        : field.Label,
+                };
+            })
             .ToList();
         for (var i = 0; i < stored.Object.Fields.Count; i++)
         {
             var field = stored.Object.Fields[i];
             if (!layout.Any(f => f.Name.Equals(field.Name, StringComparison.OrdinalIgnoreCase)))
-                layout.Add(new(field.Name, EditorOrder: i, ListOrder: i));
+                layout.Add(
+                    new(
+                        field.Name,
+                        EditorOrder: i,
+                        ListOrder: i,
+                        Label: field.Label
+                    )
+                );
         }
-        return stored with { Layout = new(layout) };
+        var labels = layout.ToDictionary(f => f.Name, f => f.Label, StringComparer.OrdinalIgnoreCase);
+        var definition = stored.Object with
+        {
+            // Keep the legacy projection populated while presentation owns labels.
+            Fields = stored.Object.Fields.Select(f =>
+                    f with { Label = labels.GetValueOrDefault(f.Name) ?? f.Label ?? f.Name }
+                )
+                .ToList(),
+        };
+        return new(definition, new(layout));
     }
 
     public static StoredObjectDefinition Split(LayoutDefinition definition)
@@ -169,7 +201,8 @@ public static class ObjectModel
                         EditorOrder: f.Order,
                         ShowInEditor: !f.Hidden,
                         ShowInList: f.ShowInList,
-                        ListOrder: f.ListOrder ?? f.Order
+                        ListOrder: f.ListOrder ?? f.Order,
+                        Label: f.Label
                     )
             )
             .ToList();
@@ -215,7 +248,7 @@ public static class ObjectModel
                             ?? new FieldPresentation(f.Name, EditorOrder: i, ListOrder: i);
                         return new LayoutField(
                             f.Name,
-                            f.Label,
+                            p.Label ?? f.Label,
                             p.Section,
                             p.EditorOrder,
                             !p.ShowInEditor,

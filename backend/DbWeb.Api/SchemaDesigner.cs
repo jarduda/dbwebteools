@@ -239,6 +239,33 @@ public static class SchemaDesigner
                 "The change conflicts with existing data or its default. No values were truncated; revise the column parameters."
             );
         }
+        catch (MySqlException e) when (e.Number is 1553 or 1833)
+        {
+            throw new ApiError(
+                409,
+                "This field is referenced by a database constraint. Remove that reference first."
+            );
+        }
+    }
+
+    public static async Task DropColumn(MySqlConnection c, string table, string column)
+    {
+        Name(column);
+        var foreignKeys = new List<string>();
+        using (var command = new MySqlCommand(
+            "SELECT CONSTRAINT_NAME FROM information_schema.KEY_COLUMN_USAGE WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME=@table AND COLUMN_NAME=@column AND REFERENCED_TABLE_NAME IS NOT NULL",
+            c
+        ))
+        {
+            command.Parameters.AddWithValue("@table", table);
+            command.Parameters.AddWithValue("@column", column);
+            await using var reader = await command.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+                foreignKeys.Add(reader.GetString(0));
+        }
+        var clauses = foreignKeys.Select(key => $"DROP FOREIGN KEY {Quote(key)}").ToList();
+        clauses.Add($"DROP COLUMN {Quote(column)}");
+        await Execute(c, $"ALTER TABLE {Quote(table)} {string.Join(", ", clauses)}");
     }
 
     public static void Map(RouteGroupBuilder admin)

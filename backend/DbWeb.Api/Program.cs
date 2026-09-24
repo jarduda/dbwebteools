@@ -617,6 +617,289 @@ admin.MapGet(
             .Layout;
     }
 );
+admin.MapDelete(
+    "/connections/{id:int}/tables/{table}/fields/{field}",
+    async (int id, string table, string field, AppDb db, DatabaseService service, HttpContext ctx) =>
+    {
+        var config = await db.Connections.FindAsync(id) ?? throw new ApiError(404, "Connection not found.");
+        await using var connection = await service.Open(config);
+        await using var gate = await SumupGate.Enter(connection);
+        var columns = await service.Columns(connection, table);
+        var configuration = await db.Layouts.SingleOrDefaultAsync(x => x.ConnectionId == id && x.Table == table);
+        var stored = ObjectModel.Stored(configuration?.FieldsJson);
+        var completedObject = ObjectModel.WithColumns(stored.Object, columns);
+        stored = new(
+            completedObject,
+            ObjectModel.CompleteLayout(completedObject, stored.Layout)
+        );
+        var existing = stored.Object.Fields.SingleOrDefault(x => x.Name.Equals(field, StringComparison.OrdinalIgnoreCase));
+        if (existing == null) throw new ApiError(404, "Field not found.");
+        var physical = columns.Any(x => x.Name.Equals(field, StringComparison.OrdinalIgnoreCase));
+        var schema = physical ? await SchemaDesigner.Inspect(connection, service, table) : null;
+        var schemaColumn = schema?.Columns.Single(x => x.Name.Equals(field, StringComparison.OrdinalIgnoreCase));
+        if (schemaColumn?.PrimaryKey == true || schemaColumn?.AutoIncrement == true)
+            throw new ApiError(400, "Primary key fields cannot be deleted here.");
+        if (schemaColumn?.Referenced == true)
+            throw new ApiError(
+                409,
+                "This field is referenced by another table. Remove that foreign key first."
+            );
+        if (await db.Pages.AnyAsync(page => page.ConnectionId == id && page.Table == table && page.LinkColumn == field))
+            throw new ApiError(409, "This field is a record page link column. Change or remove that page first.");
+
+        var removed = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { field };
+        var removedByTable = new Dictionary<string, HashSet<string>>(
+            StringComparer.OrdinalIgnoreCase
+        )
+        {
+            [table] = removed,
+        };
+        var currentFields = ObjectModel.Merge(stored).Fields;
+        var addedDependency = true;
+        while (addedDependency)
+        {
+            addedDependency = false;
+            foreach (var candidate in stored.Object.Fields.Where(x => !removed.Contains(x.Name)))
+            {
+                var dependent =
+                    candidate.Join is { } join
+                    && (
+                        removed.Contains(join.SourceColumn)
+                        || join.Table.Equals(table, StringComparison.OrdinalIgnoreCase)
+                        && (removed.Contains(join.KeyColumn) || removed.Contains(join.ValueColumn))
+                    )
+                    || candidate.Widget == "formula"
+                    && Formulas.Dependencies(candidate.Formula, columns, currentFields)
+                        .Any(removed.Contains);
+                if (dependent && removed.Add(candidate.Name))
+                    addedDependency = true;
+            }
+        }
+        var fields = stored.Object.Fields.Where(x => !removed.Contains(x.Name)).Select(candidate =>
+        {
+            if (
+                candidate.Sumup is { } sumup
+                && sumup.ChildTable.Equals(table, StringComparison.OrdinalIgnoreCase)
+                && (
+                    removed.Contains(sumup.LookupField)
+                    || removed.Contains(sumup.SourceField ?? "")
+                )
+            )
+                return candidate with
+                {
+                    Widget = "number",
+                    Sumup = null,
+                    ReadOnly = false,
+                };
+            if (candidate.Lookup is not { } lookup)
+                return candidate;
+            var pointsToTable = lookup.Table.Equals(table, StringComparison.OrdinalIgnoreCase);
+            if (
+                pointsToTable
+                && (removed.Contains(lookup.KeyColumn) || removed.Contains(lookup.DisplayColumn))
+            )
+                return candidate with { Widget = "auto", Lookup = null, Options = null };
+            var mappings = lookup.CopyMappings?.Where(mapping =>
+                    !removed.Contains(mapping.DestinationColumn)
+                    && (!pointsToTable || !removed.Contains(mapping.SourceColumn))
+                )
+                .ToList();
+            var criteria = lookup.Criteria;
+            if (pointsToTable && criteria != null)
+                criteria = criteria with
+                {
+                    Sort = removed.Contains(criteria.Sort ?? "") ? null : criteria.Sort,
+                    Filters = criteria.Filters?.Where(filter => !removed.Contains(filter.Column))
+                        .ToList(),
+                };
+            return candidate with
+            {
+                Lookup = lookup with
+                {
+                    SearchColumns = pointsToTable
+                        ? lookup.SearchColumns.Where(name => !removed.Contains(name)).ToList()
+                        : lookup.SearchColumns,
+                    CopyMappings = mappings,
+                    Criteria = criteria,
+                },
+            };
+        }).ToList();
+        var view = stored.Object.View;
+        if (view != null) view = view with {
+            Sort = removed.Contains(view.Sort ?? "") ? null : view.Sort,
+            Filters = view.Filters?.Where(filter => !removed.Contains(filter.Column)).ToList()
+        };
+        var definition = stored.Object with { Fields = fields, View = view };
+        var presentation = new LayoutPresentation(stored.Layout.Fields.Where(x => !removed.Contains(x.Name)).ToList());
+        var merged = await ObjectConfigurationRules.Validate(service, connection, table, definition, presentation);
+        var affected = new List<(RecordLayout Configuration, LayoutDefinition Definition)>();
+        if (configuration != null)
+            affected.Add((configuration, merged));
+        foreach (
+            var other in await db.Layouts.Where(layout =>
+                layout.ConnectionId == id && layout.Table != table
+            ).ToListAsync()
+        )
+        {
+            var otherStored = ObjectModel.Stored(other.FieldsJson);
+            var changed = false;
+            var otherFields = new List<ObjectField>();
+            foreach (var candidate in otherStored.Object.Fields)
+            {
+                if (
+                    candidate.Join is { } join
+                    && join.Table.Equals(table, StringComparison.OrdinalIgnoreCase)
+                    && (removed.Contains(join.KeyColumn) || removed.Contains(join.ValueColumn))
+                )
+                {
+                    if (!removedByTable.TryGetValue(other.Table, out var otherRemoved))
+                    {
+                        otherRemoved = new(StringComparer.OrdinalIgnoreCase);
+                        removedByTable[other.Table] = otherRemoved;
+                    }
+                    otherRemoved.Add(candidate.Name);
+                    changed = true;
+                    continue;
+                }
+                if (
+                    candidate.Lookup is { } lookup
+                    && lookup.Table.Equals(table, StringComparison.OrdinalIgnoreCase)
+                )
+                {
+                    if (removed.Contains(lookup.KeyColumn) || removed.Contains(lookup.DisplayColumn))
+                    {
+                        otherFields.Add(
+                            candidate with { Widget = "auto", Lookup = null, Options = null }
+                        );
+                        changed = true;
+                        continue;
+                    }
+                    var search = lookup.SearchColumns.Where(name => !removed.Contains(name)).ToList();
+                    var copies = lookup.CopyMappings?.Where(mapping =>
+                            !removed.Contains(mapping.SourceColumn)
+                        )
+                        .ToList();
+                    var criteria = lookup.Criteria;
+                    if (criteria != null)
+                        criteria = criteria with
+                        {
+                            Sort = removed.Contains(criteria.Sort ?? "") ? null : criteria.Sort,
+                            Filters = criteria.Filters?.Where(filter =>
+                                    !removed.Contains(filter.Column)
+                                )
+                                .ToList(),
+                        };
+                    if (
+                        search.Count != lookup.SearchColumns.Count
+                        || copies?.Count != lookup.CopyMappings?.Count
+                        || criteria != lookup.Criteria
+                    )
+                    {
+                        otherFields.Add(
+                            candidate with
+                            {
+                                Lookup = lookup with
+                                {
+                                    SearchColumns = search,
+                                    CopyMappings = copies,
+                                    Criteria = criteria,
+                                },
+                            }
+                        );
+                        changed = true;
+                        continue;
+                    }
+                }
+                if (
+                    candidate.Sumup is { } sumup
+                    && sumup.ChildTable.Equals(table, StringComparison.OrdinalIgnoreCase)
+                    && (
+                        removed.Contains(sumup.LookupField)
+                        || removed.Contains(sumup.SourceField ?? "")
+                    )
+                )
+                {
+                    otherFields.Add(
+                        candidate with
+                        {
+                            Widget = "number",
+                            Sumup = null,
+                            ReadOnly = false,
+                        }
+                    );
+                    changed = true;
+                    continue;
+                }
+                otherFields.Add(candidate);
+            }
+            if (!changed)
+                continue;
+            var names = otherFields.Select(item => item.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var otherDefinition = otherStored.Object with { Fields = otherFields };
+            var otherPresentation = new LayoutPresentation(
+                otherStored.Layout.Fields.Where(item => names.Contains(item.Name)).ToList()
+            );
+            affected.Add(
+                (
+                    other,
+                    await ObjectConfigurationRules.Validate(
+                        service,
+                        connection,
+                        other.Table,
+                        otherDefinition,
+                        otherPresentation
+                    )
+                )
+            );
+        }
+        if (physical) await SchemaDesigner.DropColumn(connection, table, field);
+        foreach (var item in affected)
+            await Sumups.SaveLayout(db, service, connection, id, item.Configuration, item.Definition);
+        foreach (var page in await db.Pages.Where(page => page.ConnectionId == id).ToListAsync())
+        {
+            var tabs = JsonSerializer.Deserialize<List<RelatedTab>>(page.TabsJson) ?? [];
+            var changed = false;
+            tabs = tabs.Where(tab =>
+            {
+                var parentReference =
+                    page.Table.Equals(table, StringComparison.OrdinalIgnoreCase)
+                    && removed.Contains(tab.ParentColumn);
+                var childReference =
+                    tab.Table.Equals(table, StringComparison.OrdinalIgnoreCase)
+                    && new[] { tab.RelatedColumn, tab.LinkColumn, tab.LookupField }.Any(name =>
+                        name != null && removed.Contains(name)
+                    );
+                changed |= parentReference || childReference;
+                return !parentReference && !childReference;
+            }).Select(tab =>
+            {
+                if (!tab.Table.Equals(table, StringComparison.OrdinalIgnoreCase))
+                    return tab;
+                var next = tab.Columns.Where(name => !removed.Contains(name)).ToList();
+                changed |= next.Count != tab.Columns.Count;
+                return tab with { Columns = next };
+            }).ToList();
+            if (changed) page.TabsJson = JsonSerializer.Serialize(tabs);
+        }
+        foreach (
+            var policy in await db.FieldPolicies.Where(policy =>
+                policy.ConnectionId == id
+            ).ToListAsync()
+        )
+        {
+            if (!removedByTable.TryGetValue(policy.Table, out var removedNames))
+                continue;
+            var levels =
+                JsonSerializer.Deserialize<Dictionary<string, string>>(policy.FieldsJson) ?? [];
+            foreach (var name in levels.Keys.Where(removedNames.Contains).ToList())
+                levels.Remove(name);
+            policy.FieldsJson = JsonSerializer.Serialize(levels);
+        }
+        db.Audit.Add(new() { Actor = ctx.User.Identity!.Name!, Action = physical ? "delete-column" : "delete-virtual-field", Resource = $"{id}/{table}/{field}" });
+        await db.SaveChangesAsync();
+        return Results.NoContent();
+    }
+);
 admin.MapPut(
     "/connections/{id:int}/tables/{table}/object",
     async (int id, string table, ObjectDefinition input, AppDb db, DatabaseService service) =>
@@ -744,17 +1027,36 @@ admin.MapPut(
                 field => field.Section,
                 StringComparer.OrdinalIgnoreCase
             );
+            var existingLabels = stored.Layout.Fields.ToDictionary(
+                field => field.Name,
+                field => field.Label,
+                StringComparer.OrdinalIgnoreCase
+            );
             presentation = presentation with
             {
                 Fields = presentation
                     .Fields.Select(field =>
-                        !fieldsWithSection.Contains(field.Name)
-                        && existingSections.TryGetValue(field.Name, out var section)
-                            ? field with
+                    {
+                        var result = field;
+                        if (
+                            !fieldsWithSection.Contains(field.Name)
+                            && existingSections.TryGetValue(field.Name, out var section)
+                        )
+                            result = result with { Section = section };
+                        if (result.Label == null)
+                            result = result with
                             {
-                                Section = section,
-                            }
-                            : field
+                                Label = existingLabels.GetValueOrDefault(field.Name)
+                                    ?? stored.Object.Fields.FirstOrDefault(candidate =>
+                                            candidate.Name.Equals(
+                                                field.Name,
+                                                StringComparison.OrdinalIgnoreCase
+                                            )
+                                        )?.Label
+                                    ?? field.Name,
+                            };
+                        return result;
+                    }
                     )
                     .ToList(),
             };

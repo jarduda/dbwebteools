@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   api,
   type Column,
@@ -83,7 +83,9 @@ export function ObjectEditor({
     [objectView, setObjectView] = useState<ListView>({}),
     [objectLoading, setObjectLoading] = useState(false);
   const [draft, setDraft] = useState<Draft | null>(null),
-    [editing, setEditing] = useState(false);
+    [editing, setEditing] = useState(false),
+    [fieldDraft, setFieldDraft] = useState<ObjectField | null>(null),
+    [pendingVirtual, setPendingVirtual] = useState(false);
   const [creating, setCreating] = useState(false),
     [newName, setNewName] = useState(""),
     [primaryKey, setPrimaryKey] = useState("id");
@@ -92,6 +94,7 @@ export function ObjectEditor({
     [error, setError] = useState(""),
     [message, setMessage] = useState(""),
     [revision, setRevision] = useState(0);
+  const fieldDialogRef = useRef<HTMLFormElement>(null);
   const base = `/admin/connections/${connection}/schema`;
   useEffect(() => {
     let active = true;
@@ -198,6 +201,24 @@ export function ObjectEditor({
     autoIncrement: column.autoIncrement,
     default: column.default,
   }));
+  const draftColumn: Column | undefined = draft && fieldDraft
+    ? columns.find((column) => column.name === fieldDraft.name) || {
+        name: fieldDraft.name,
+        type: ({ text: "varchar", dropdown: "varchar", textarea: "longtext", number: "decimal", checkbox: "tinyint", date: "date", datetime: "datetime", lookup: "bigint" } as Record<string, string>)[fieldDraft.widget] || "varchar",
+        nullable: draft.nullable,
+        primaryKey: false,
+        generated: false,
+        autoIncrement: false,
+        default: null,
+      }
+    : undefined;
+  const editingSchemaColumn =
+    draft && schema
+      ? schema.columns.find((column) => column.name === draft.name)
+      : undefined;
+  const showDatabaseAttributes = !editing || !!editingSchemaColumn;
+  const databaseAttributesDisabled =
+    busy || (editing && !!editingSchemaColumn?.editBlocked);
   const runtimeFields: Field[] = objectFields.map((field, index) => ({
     ...field,
     section: "",
@@ -206,12 +227,37 @@ export function ObjectEditor({
     showInList: true,
     listOrder: index,
   }));
-  const updateField = (name: string, patch: Partial<ObjectField>) =>
-    setObjectFields((old) =>
-      old.map((field) =>
-        field.name === name ? { ...field, ...patch } : field,
-      ),
-    );
+  const patchField = (patch: Partial<ObjectField>) =>
+    setFieldDraft((old) => (old ? { ...old, ...patch } : old));
+  const databaseType = (widget: string) =>
+    ({
+      text: "text",
+      dropdown: "text",
+      textarea: "longtext",
+      number: "decimal",
+      checkbox: "boolean",
+      date: "date",
+      datetime: "datetime",
+      lookup: "relation",
+    })[widget] || "text";
+  const closeFieldDialog = () => {
+    if (pendingVirtual && fieldDraft)
+      setObjectFields((old) =>
+        old.filter((field) => field.name !== fieldDraft.name),
+      );
+    setDraft(null);
+    setFieldDraft(null);
+    setPendingVirtual(false);
+  };
+  const fieldDialogOpen = !!draft && !!fieldDraft && !!schema && !creating;
+  useEffect(() => {
+    if (!fieldDialogOpen) return;
+    const previous = document.activeElement as HTMLElement | null;
+    fieldDialogRef.current
+      ?.querySelector<HTMLElement>("input:not(:disabled),button:not(:disabled)")
+      ?.focus();
+    return () => previous?.focus();
+  }, [fieldDialogOpen]);
   return (
     <div className="object-editor">
       <div className="heading">
@@ -354,23 +400,78 @@ export function ObjectEditor({
         </form>
       )}
       {loading && <p role="status">Loading table structure…</p>}
-      {draft && schema && !creating && (
+      {draft && fieldDraft && schema && !creating && (
+        <div
+          className="overlay"
+          role="presentation"
+          onKeyDown={(event) => {
+            if (event.key === "Escape") closeFieldDialog();
+            if (event.key !== "Tab") return;
+            const controls = fieldDialogRef.current?.querySelectorAll<HTMLElement>(
+              "button:not(:disabled),input:not(:disabled),select:not(:disabled),textarea:not(:disabled)",
+            );
+            if (!controls?.length) return;
+            const first = controls[0];
+            const last = controls[controls.length - 1];
+            if (event.shiftKey && document.activeElement === first) {
+              event.preventDefault();
+              last.focus();
+            } else if (!event.shiftKey && document.activeElement === last) {
+              event.preventDefault();
+              first.focus();
+            }
+          }}
+        >
         <form
-          className="card schema-column-form"
+          ref={fieldDialogRef}
+          className="modal schema-column-form"
+          role="dialog"
+          aria-modal="true"
           aria-label={editing ? "Edit database field" : "Add field"}
           onSubmit={(e) => {
             e.preventDefault();
             void run(async () => {
-              const result = await api<Schema>(
-                `${base}/tables/${encodeURIComponent(table)}/${editing ? "modify-column" : "columns"}`,
-                "POST",
-                { ...draft, version: schema.version },
+              const currentColumn = schema.columns.find(
+                (column) => column.name === draft.name,
+              );
+              const physical = !!currentColumn;
+              let result = schema;
+              const blocked = currentColumn?.editBlocked;
+              const schemaDirty =
+                !!currentColumn &&
+                (draft.nullable !== currentColumn.nullable ||
+                  (currentColumn.type === "varchar" &&
+                    draft.length !== currentColumn.length) ||
+                  (currentColumn.type === "decimal" &&
+                    (draft.precision !== currentColumn.precision ||
+                      draft.scale !== currentColumn.scale)));
+              if (!editing || (schemaDirty && !blocked))
+                result = await api<Schema>(
+                  `${base}/tables/${encodeURIComponent(table)}/${editing ? "modify-column" : "columns"}`,
+                  "POST",
+                  { ...draft, version: schema.version },
+                );
+              const savedField = fieldDraft.widget === "lookup" && !editing
+                ? { ...fieldDraft, lookup: { table: draft.relatedTable, keyColumn: draft.relatedKey, displayColumn: draft.displayColumn, searchColumns: [] } }
+                : fieldDraft;
+              const nextFields = editing
+                ? objectFields.map((field) => field.name === savedField.name ? savedField : field)
+                : [...objectFields, savedField];
+              await api(
+                `/admin/connections/${connection}/tables/${encodeURIComponent(table)}/object`,
+                "PUT",
+                { fields: nextFields, view: objectView },
               );
               setSchema(result);
+              setObjectFields(nextFields);
               setDraft(null);
+              setFieldDraft(null);
+              setPendingVirtual(false);
               setMessage(
                 editing
-                  ? "Column parameters updated."
+                  ? schemaDirty
+                    ? "Field attributes and behavior updated."
+                    : "Field behavior updated."
                   : draft.type === "relation"
                     ? "Relation field created. Foreign key and object lookup configured."
                     : "Field created.",
@@ -378,7 +479,16 @@ export function ObjectEditor({
             });
           }}
         >
-          <h2>{editing ? "Edit database field" : "Add field"}</h2>
+          <div className="modal-header">
+            <h2>{editing ? `Edit ${fieldDraft.name}` : "Add field"}</h2>
+            <button
+              type="button"
+              aria-label="Close field dialog"
+              onClick={closeFieldDialog}
+            >
+              ×
+            </button>
+          </div>
           <div className="form-grid">
             <label>
               Field name
@@ -389,33 +499,55 @@ export function ObjectEditor({
                 pattern="[A-Za-z_][A-Za-z0-9_]{0,63}"
                 maxLength={64}
                 value={draft.name}
-                onChange={(e) => patch({ name: e.target.value })}
+                onChange={(e) => {
+                  patch({ name: e.target.value });
+                  patchField({ name: e.target.value, label: e.target.value });
+                }}
               />
             </label>
             <label>
-              Type
+              Control / behavior
               <select
-                aria-label="Column type"
-                value={draft.type}
-                disabled={editing || busy}
-                onChange={(e) =>
-                  patch({
-                    type: e.target.value,
-                    relatedTable: "",
-                    relatedKey: "",
-                    displayColumn: "",
-                  })
-                }
+                aria-label="Control / behavior"
+                value={fieldDraft.widget}
+                disabled={busy || ["join", "formula"].includes(fieldDraft.widget)}
+                onChange={(e) => {
+                  const widget = e.target.value;
+                  patchField({
+                    widget,
+                    lookup: widget === "lookup" ? fieldDraft.lookup : undefined,
+                    options: widget === "dropdown" ? fieldDraft.options || [] : undefined,
+                    sumup: widget === "sumup" ? fieldDraft.sumup : undefined,
+                    creationDefault: widget === "sumup" ? null : fieldDraft.creationDefault,
+                    readOnly: widget === "sumup" || fieldDraft.readOnly,
+                    required: widget === "sumup" ? false : fieldDraft.required,
+                  });
+                  if (!editing)
+                    patch({
+                      type: databaseType(widget),
+                      relatedTable: "",
+                      relatedKey: "",
+                      displayColumn: "",
+                    });
+                }}
               >
+                {["auto", "sumup", "join", "formula"].includes(fieldDraft.widget) && (
+                  <option value={fieldDraft.widget}>
+                    {fieldDraft.widget === "sumup" ? "Sum-up (stored total)" : fieldDraft.widget === "join" ? "Joined (read-only)" : fieldDraft.widget === "formula" ? "Formula (read-only)" : "Automatic"}
+                  </option>
+                )}
+                {editing && fieldDraft.widget !== "sumup" && columns.some((column) =>
+                  column.name === fieldDraft.name && ["tinyint", "smallint", "mediumint", "int", "bigint", "decimal"].includes(column.type)
+                ) && <option value="sumup">Sum-up (stored total)</option>}
                 {Object.entries({
                   text: "Text",
-                  longtext: "Long text",
-                  integer: "Integer",
-                  decimal: "Decimal number",
-                  boolean: "Boolean",
+                  textarea: "Text area",
+                  number: "Number",
+                  dropdown: "Dropdown",
+                  checkbox: "Checkbox",
                   date: "Date",
                   datetime: "Date and time",
-                  relation: "Relation",
+                  lookup: "Lookup / relation",
                 }).map(([value, label]) => (
                   <option key={value} value={value}>
                     {label}
@@ -423,64 +555,134 @@ export function ObjectEditor({
                 ))}
               </select>
             </label>
-            {draft.type === "text" && (
-              <label>
-                Text length
-                <input
-                  aria-label="Text length"
-                  type="number"
-                  required
-                  min={1}
-                  max={16383}
-                  value={draft.length}
-                  disabled={busy}
-                  onChange={(e) => patch({ length: Number(e.target.value) })}
-                />
-              </label>
-            )}
-            {draft.type === "decimal" && (
-              <>
+            {showDatabaseAttributes &&
+              (editing ? draft.type : databaseType(fieldDraft.widget)) ===
+                "text" && (
                 <label>
-                  Total digits (precision)
+                  Text length
                   <input
-                    aria-label="Total digits"
+                    aria-label="Text length"
                     type="number"
                     required
                     min={1}
-                    max={65}
-                    value={draft.precision}
-                    disabled={busy}
-                    onChange={(e) =>
-                      patch({ precision: Number(e.target.value) })
-                    }
+                    max={16383}
+                    value={draft.length}
+                    disabled={databaseAttributesDisabled}
+                    onChange={(e) => patch({ length: Number(e.target.value) })}
                   />
                 </label>
-                <label>
-                  Decimal places
-                  <input
-                    aria-label="Decimal places"
-                    type="number"
-                    required
-                    min={0}
-                    max={Math.min(30, draft.precision)}
-                    value={draft.scale}
-                    disabled={busy}
-                    onChange={(e) => patch({ scale: Number(e.target.value) })}
-                  />
-                </label>
-              </>
-            )}
+              )}
+            {showDatabaseAttributes &&
+              (editing ? draft.type : databaseType(fieldDraft.widget)) ===
+                "decimal" && (
+                <>
+                  <label>
+                    Total digits (precision)
+                    <input
+                      aria-label="Total digits"
+                      type="number"
+                      required
+                      min={1}
+                      max={65}
+                      value={draft.precision}
+                      disabled={databaseAttributesDisabled}
+                      onChange={(e) =>
+                        patch({ precision: Number(e.target.value) })
+                      }
+                    />
+                  </label>
+                  <label>
+                    Decimal places
+                    <input
+                      aria-label="Decimal places"
+                      type="number"
+                      required
+                      min={0}
+                      max={Math.min(30, draft.precision)}
+                      value={draft.scale}
+                      disabled={databaseAttributesDisabled}
+                      onChange={(e) => patch({ scale: Number(e.target.value) })}
+                    />
+                  </label>
+                </>
+              )}
           </div>
-          <label className="check">
-            <input
-              type="checkbox"
-              checked={draft.nullable}
-              disabled={busy}
-              onChange={(e) => patch({ nullable: e.target.checked })}
+          {showDatabaseAttributes && (
+            <label className="check">
+              <input
+                type="checkbox"
+                checked={draft.nullable}
+                disabled={databaseAttributesDisabled}
+                onChange={(e) => patch({ nullable: e.target.checked })}
+              />
+              Allow NULL (empty values)
+            </label>
+          )}
+          <div className="form-grid">
+            <label className="check">
+              <input
+                type="checkbox"
+                aria-label={`${fieldDraft.name} readOnly`}
+                checked={fieldDraft.readOnly}
+                disabled={busy || ["join", "formula", "sumup"].includes(fieldDraft.widget)}
+                onChange={(e) => patchField({ readOnly: e.target.checked, required: e.target.checked ? false : fieldDraft.required })}
+              />
+              Read-only
+            </label>
+            <label className="check">
+              <input
+                type="checkbox"
+                aria-label={`${fieldDraft.name} required`}
+                checked={!!fieldDraft.required}
+                disabled={busy || fieldDraft.readOnly || ["join", "formula", "sumup"].includes(fieldDraft.widget)}
+                onChange={(e) => patchField({ required: e.target.checked })}
+              />
+              Required
+            </label>
+          </div>
+          {!['join', 'formula'].includes(fieldDraft.widget) && (
+            <CreationDefaultEditor
+              field={{ ...fieldDraft, section: "", order: 0, hidden: false, showInList: true }}
+              column={draftColumn}
+              change={(creationDefault) => patchField({ creationDefault })}
             />
-            Allow NULL (empty values)
-          </label>
-          {draft.type === "relation" && (
+          )}
+          {fieldDraft.widget === "dropdown" && (
+            <DropdownConfiguration
+              name={fieldDraft.name}
+              options={fieldDraft.options || []}
+              change={(options) => patchField({ options })}
+            />
+          )}
+          {fieldDraft.widget === "formula" && (
+            <div className="lookup-config formula-config">
+              <FormulaValidator connection={connection} table={table} field={{ ...fieldDraft, section: "", order: 0, hidden: false }} fields={runtimeFields} />
+              <label>Expression<textarea aria-label={`${fieldDraft.name} expression`} maxLength={1024} value={fieldDraft.formula || ""} onChange={(e) => patchField({ formula: e.target.value })} /></label>
+            </div>
+          )}
+          {fieldDraft.widget === "join" && (
+            <JoinConfiguration
+              field={{ ...fieldDraft, section: "", order: 0, hidden: false }}
+              connection={connection}
+              tables={tables}
+              sources={objectFields.filter((item) => !["join", "formula"].includes(item.widget)).map((item) => item.name)}
+              change={(join) => patchField({ join })}
+            />
+          )}
+          {fieldDraft.widget === "lookup" && editing && (
+            <LookupConfiguration
+              name={fieldDraft.name}
+              connection={connection}
+              tables={tables}
+              destinations={columns}
+              value={fieldDraft.lookup}
+              change={(lookup) => patchField({ lookup })}
+            />
+          )}
+          {fieldDraft.widget === "sumup" && (
+            <SumupConfiguration name={fieldDraft.name} connection={connection} table={table} value={fieldDraft.sumup} change={(sumup) => patchField({ sumup })} />
+          )}
+          {!editing && databaseType(fieldDraft.widget) === "relation" && (
             <>
               <div className="form-grid">
                 <label>
@@ -582,15 +784,23 @@ export function ObjectEditor({
             <button
               type="button"
               disabled={busy}
-              onClick={() => setDraft(null)}
+              onClick={closeFieldDialog}
             >
               Cancel
             </button>
-            <button className="primary" disabled={busy}>
+            <button
+              className="primary"
+              disabled={
+                busy ||
+                (fieldDraft.widget === "dropdown" &&
+                  !!dropdownError(fieldDraft.options || []))
+              }
+            >
               {busy ? "Applying…" : editing ? "Save field" : "Create field"}
             </button>
           </div>
         </form>
+        </div>
       )}
       {schema && !creating && (
         <section
@@ -603,21 +813,9 @@ export function ObjectEditor({
               <p className="muted">
                 Define validation, controls, relationships, defaults, formulas,
                 joins and aggregates alongside their database definitions.
-                Sections, order and visibility belong to Layout editor.
+                Labels, sections, order and visibility belong to Layout editor.
               </p>
             </div>
-            <button
-              className="primary"
-              disabled={busy}
-              onClick={() => {
-                setDraft(blank());
-                setEditing(false);
-                setError("");
-                setMessage("");
-              }}
-            >
-              Add field
-            </button>
           </div>
           {objectLoading ? (
             <p role="status">Loading object definition…</p>
@@ -635,7 +833,6 @@ export function ObjectEditor({
                     <tr>
                       <th>Field</th>
                       <th>Database definition</th>
-                      <th>Label</th>
                       <th>Control / behavior</th>
                       <th>Read-only</th>
                       <th>Required</th>
@@ -680,161 +877,35 @@ export function ObjectEditor({
                             )}
                           </td>
                           <td>
-                            <input
-                              aria-label={`${field.name} label`}
-                              maxLength={150}
-                              value={field.label}
-                              onChange={(e) =>
-                                updateField(field.name, {
-                                  label: e.target.value,
-                                })
-                              }
-                            />
+                            {field.widget === "join" ? "Joined (read-only)" : field.widget === "formula" ? "Formula (read-only)" : field.widget}
                           </td>
                           <td>
-                            <select
-                              aria-label={`${field.name} control`}
-                              value={field.widget}
-                              disabled={virtual}
-                              onChange={(e) => {
-                                const widget = e.target.value;
-                                updateField(field.name, {
-                                  widget,
-                                  creationDefault:
-                                    widget === "sumup"
-                                      ? null
-                                      : field.creationDefault,
-                                  sumup:
-                                    widget === "sumup"
-                                      ? field.sumup
-                                      : undefined,
-                                  readOnly:
-                                    widget === "sumup" || field.readOnly,
-                                  required:
-                                    widget === "sumup" ? false : field.required,
-                                  lookup:
-                                    widget === "lookup"
-                                      ? field.lookup
-                                      : undefined,
-                                  options:
-                                    widget === "dropdown"
-                                      ? field.options || []
-                                      : undefined,
-                                });
-                              }}
-                            >
-                              {field.widget === "formula" && (
-                                <option value="formula">
-                                  Formula (read-only)
-                                </option>
-                              )}
-                              {field.widget === "join" && (
-                                <option value="join">Joined (read-only)</option>
-                              )}
-                              {column &&
-                                !column.primaryKey &&
-                                !column.autoIncrement &&
-                                !column.generated &&
-                                [
-                                  "tinyint",
-                                  "smallint",
-                                  "mediumint",
-                                  "int",
-                                  "bigint",
-                                  "decimal",
-                                ].includes(column.type) && (
-                                  <option value="sumup">
-                                    Sum-up (stored total)
-                                  </option>
-                                )}
-                              {[
-                                "auto",
-                                "text",
-                                "textarea",
-                                "number",
-                                "date",
-                                "datetime",
-                                "dropdown",
-                                "checkbox",
-                                "lookup",
-                              ].map((widget) => (
-                                <option key={widget} value={widget}>
-                                  {widget === "datetime"
-                                    ? "DateTime"
-                                    : widget[0].toUpperCase() + widget.slice(1)}
-                                </option>
-                              ))}
-                            </select>
+                            {field.readOnly ? "Yes" : "No"}
                           </td>
                           <td>
-                            <input
-                              type="checkbox"
-                              aria-label={`${field.name} readOnly`}
-                              checked={field.readOnly}
-                              disabled={virtual || field.widget === "sumup"}
-                              onChange={(e) =>
-                                updateField(field.name, {
-                                  readOnly: e.target.checked,
-                                  required: e.target.checked
-                                    ? false
-                                    : field.required,
-                                })
-                              }
-                            />
+                            {field.required ? "Yes" : "No"}
                           </td>
                           <td>
-                            <input
-                              type="checkbox"
-                              aria-label={`${field.name} required`}
-                              checked={!!field.required}
-                              disabled={
-                                field.readOnly ||
-                                virtual ||
-                                !!column?.generated ||
-                                !!column?.autoIncrement
-                              }
-                              onChange={(e) =>
-                                updateField(field.name, {
-                                  required: e.target.checked,
-                                })
-                              }
-                            />
+                            {field.creationDefault ? "Configured" : "—"}
                           </td>
                           <td>
-                            <CreationDefaultEditor
-                              field={{
-                                ...field,
-                                section: "",
-                                order: 0,
-                                hidden: false,
-                                showInList: true,
-                              }}
-                              column={column}
-                              change={(creationDefault) =>
-                                updateField(field.name, { creationDefault })
-                              }
-                            />
-                          </td>
-                          <td>
-                            {schemaColumn ? (
-                              <>
+                            <div className="actions">
                                 <button
-                                  disabled={busy || !!schemaColumn.editBlocked}
-                                  title={
-                                    schemaColumn.editBlocked ||
-                                    "Edit database field"
-                                  }
-                                  aria-label={`Edit field ${schemaColumn.name}`}
+                                  disabled={busy}
+                                  title={schemaColumn?.editBlocked || "Edit field"}
+                                  aria-label={`Edit field ${field.name}`}
                                   onClick={() => {
                                     setDraft({
                                       ...blank(),
-                                      name: schemaColumn.name,
-                                      type: kind(schemaColumn),
-                                      nullable: schemaColumn.nullable,
-                                      length: schemaColumn.length || 255,
-                                      precision: schemaColumn.precision || 18,
-                                      scale: schemaColumn.scale ?? 2,
+                                      name: field.name,
+                                      type: schemaColumn ? kind(schemaColumn) : "text",
+                                      nullable: schemaColumn?.nullable ?? true,
+                                      length: schemaColumn?.length || 255,
+                                      precision: schemaColumn?.precision || 18,
+                                      scale: schemaColumn?.scale ?? 2,
                                     });
+                                    setFieldDraft({ ...field });
+                                    setPendingVirtual(false);
                                     setEditing(true);
                                     setError("");
                                     setMessage("");
@@ -842,16 +913,25 @@ export function ObjectEditor({
                                 >
                                   Edit
                                 </button>
-                                {schemaColumn.editBlocked && (
+                                <button
+                                  className="danger"
+                                  aria-label={`Delete field ${field.name}`}
+                                  disabled={busy || !!schemaColumn?.primaryKey || !!schemaColumn?.autoIncrement}
+                                  onClick={() => {
+                                    if (!window.confirm(`Delete field ${field.name}? This permanently removes the field and its configuration.`)) return;
+                                    void run(async () => {
+                                      await api(`/admin/connections/${connection}/tables/${encodeURIComponent(table)}/fields/${encodeURIComponent(field.name)}`, "DELETE");
+                                      setMessage(`Field ${field.name} deleted.`);
+                                    });
+                                  }}
+                                >Delete</button>
+                                {schemaColumn?.editBlocked && (
                                   <small className="muted">
                                     {" "}
                                     {schemaColumn.editBlocked}
                                   </small>
                                 )}
-                              </>
-                            ) : (
-                              "Configured below"
-                            )}
+                            </div>
                           </td>
                         </tr>
                       );
@@ -860,6 +940,21 @@ export function ObjectEditor({
                 </table>
               </div>
               <div className="actions object-field-actions">
+                <button
+                  type="button"
+                  className="primary"
+                  disabled={busy}
+                  onClick={() => {
+                    setDraft(blank());
+                    setFieldDraft({ name: "", label: "", readOnly: false, required: false, widget: "text" });
+                    setPendingVirtual(false);
+                    setEditing(false);
+                    setError("");
+                    setMessage("");
+                  }}
+                >
+                  Add field
+                </button>
                 <button
                   type="button"
                   disabled={
@@ -871,9 +966,7 @@ export function ObjectEditor({
                     let n = 1;
                     while (objectFields.some((f) => f.name === `joined_${n}`))
                       n++;
-                    setObjectFields((old) => [
-                      ...old,
-                      {
+                    const added: ObjectField = {
                         name: `joined_${n}`,
                         label: "Related value",
                         readOnly: true,
@@ -884,8 +977,12 @@ export function ObjectEditor({
                           keyColumn: "",
                           valueColumn: "",
                         },
-                      },
-                    ]);
+                      };
+                    setObjectFields((old) => [...old, added]);
+                    setFieldDraft(added);
+                    setDraft({ ...blank(), name: added.name });
+                    setPendingVirtual(true);
+                    setEditing(true);
                   }}
                 >
                   Add joined field
@@ -901,127 +998,23 @@ export function ObjectEditor({
                     let n = 1;
                     while (objectFields.some((f) => f.name === `formula_${n}`))
                       n++;
-                    setObjectFields((old) => [
-                      ...old,
-                      {
+                    const added: ObjectField = {
                         name: `formula_${n}`,
                         label: "Calculated value",
                         readOnly: true,
                         widget: "formula",
                         formula: "",
-                      },
-                    ]);
+                      };
+                    setObjectFields((old) => [...old, added]);
+                    setFieldDraft(added);
+                    setDraft({ ...blank(), name: added.name });
+                    setPendingVirtual(true);
+                    setEditing(true);
                   }}
                 >
                   Add formula field
                 </button>
               </div>
-              {runtimeFields
-                .filter((field) => field.widget === "formula")
-                .map((field) => (
-                  <fieldset
-                    className="lookup-config formula-config"
-                    key={field.name}
-                  >
-                    <legend>{field.name} formula</legend>
-                    <FormulaValidator
-                      connection={connection}
-                      table={table}
-                      field={field}
-                      fields={runtimeFields}
-                    />
-                    <label>
-                      Expression
-                      <textarea
-                        aria-label={`${field.name} expression`}
-                        maxLength={1024}
-                        value={field.formula || ""}
-                        onChange={(e) =>
-                          updateField(field.name, { formula: e.target.value })
-                        }
-                      />
-                    </label>
-                    <p>
-                      Calculated on the server. Reference stored columns in
-                      square brackets, for example{" "}
-                      <code>Round([price] * [quantity], 2)</code>.
-                    </p>
-                    <button
-                      type="button"
-                      aria-label={`Remove ${field.name}`}
-                      onClick={() =>
-                        setObjectFields((old) =>
-                          old.filter((item) => item.name !== field.name),
-                        )
-                      }
-                    >
-                      Remove formula field
-                    </button>
-                  </fieldset>
-                ))}
-              {runtimeFields
-                .filter((field) => field.widget === "join")
-                .map((field) => (
-                  <JoinConfiguration
-                    key={`${connection}/${table}/${field.name}`}
-                    field={field}
-                    connection={connection}
-                    tables={tables}
-                    sources={objectFields
-                      .filter(
-                        (item) => !["join", "formula"].includes(item.widget),
-                      )
-                      .map((item) => item.name)}
-                    change={(join) => updateField(field.name, { join })}
-                    remove={() =>
-                      setObjectFields((old) =>
-                        old.filter((item) => item.name !== field.name),
-                      )
-                    }
-                  />
-                ))}
-              {objectFields
-                .filter((field) => field.widget === "dropdown")
-                .map((field) => (
-                  <DropdownConfiguration
-                    key={`${connection}/${table}/${field.name}`}
-                    name={field.name}
-                    options={field.options || []}
-                    change={(options) => updateField(field.name, { options })}
-                  />
-                ))}
-              {objectFields
-                .filter((field) => field.widget === "sumup")
-                .map((field) => (
-                  <SumupConfiguration
-                    key={`${connection}/${table}/${field.name}`}
-                    name={field.name}
-                    connection={connection}
-                    table={table}
-                    value={field.sumup}
-                    change={(sumup) => updateField(field.name, { sumup })}
-                  />
-                ))}
-              {objectFields
-                .filter((field) => field.widget === "lookup")
-                .map((field) => (
-                  <LookupConfiguration
-                    key={`${connection}/${table}/${field.name}`}
-                    name={field.name}
-                    connection={connection}
-                    tables={tables}
-                    destinations={columns.filter(
-                      (column) =>
-                        !objectFields.some(
-                          (item) =>
-                            item.name === column.name &&
-                            ["lookup", "sumup"].includes(item.widget),
-                        ),
-                    )}
-                    value={field.lookup}
-                    change={(lookup) => updateField(field.name, { lookup })}
-                  />
-                ))}
               {objectFields.some((field) => field.widget === "sumup") && (
                 <button
                   disabled={busy || objectLoading}

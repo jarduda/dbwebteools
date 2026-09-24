@@ -49,61 +49,45 @@ test("configure lookup copies and backend formula fields, create and replace rel
   await page
     .getByRole("combobox", { name: "Table", exact: true })
     .selectOption("z_copy_records");
-  await page
-    .getByLabel("product_id control", { exact: true })
-    .selectOption("lookup");
-  await page
-    .getByLabel("product_id related table")
-    .selectOption("z_copy_catalog");
-  await page.getByLabel("product_id key column").selectOption("id");
-  await page.getByLabel("product_id display column").selectOption("name");
-  await page.getByRole("button", { name: "Add copy mapping" }).click();
-  await page.getByLabel("product_id copy 1 source").selectOption("name");
-  await page
-    .getByLabel("product_id copy 1 destination")
-    .selectOption("description");
-  await page.getByRole("button", { name: "Add copy mapping" }).click();
-  await page.getByLabel("product_id copy 2 source").selectOption("price");
-  await page
-    .getByLabel("product_id copy 2 destination")
-    .selectOption("unit_price");
-  await page
-    .getByLabel("product_id copy 1 allow editing", { exact: true })
-    .check();
-  const criteria = page.getByRole("region", {
+  await page.getByRole("button", { name: "Edit field product_id" }).click();
+  let fieldDialog = page.getByRole("dialog", { name: "Edit database field" });
+  await fieldDialog.getByLabel("Control / behavior").selectOption("lookup");
+  await fieldDialog.getByLabel("product_id related table").selectOption("z_copy_catalog");
+  await fieldDialog.getByLabel("product_id key column").selectOption("id");
+  await fieldDialog.getByLabel("product_id display column").selectOption("name");
+  await fieldDialog.getByRole("button", { name: "Add copy mapping" }).click();
+  await fieldDialog.getByLabel("product_id copy 1 source").selectOption("name");
+  await fieldDialog.getByLabel("product_id copy 1 destination").selectOption("description");
+  await fieldDialog.getByRole("button", { name: "Add copy mapping" }).click();
+  await fieldDialog.getByLabel("product_id copy 2 source").selectOption("price");
+  await fieldDialog.getByLabel("product_id copy 2 destination").selectOption("unit_price");
+  await fieldDialog.getByLabel("product_id copy 1 allow editing", { exact: true }).check();
+  let criteria = fieldDialog.getByRole("region", {
     name: "product_id lookup criteria",
     exact: true,
   });
-  await criteria
-    .getByRole("button", { name: "Add filter", exact: true })
-    .click();
-  await criteria
-    .getByLabel("Filter 1 field", { exact: true })
-    .selectOption("price");
-  await criteria
-    .getByLabel("Filter 1 condition", { exact: true })
-    .selectOption("gt");
+  await criteria.getByRole("button", { name: "Add filter", exact: true }).click();
+  await criteria.getByLabel("Filter 1 field", { exact: true }).selectOption("price");
+  await criteria.getByLabel("Filter 1 condition", { exact: true }).selectOption("gt");
   await criteria.getByLabel("Filter 1 value", { exact: true }).fill("0");
-  await page
-    .getByLabel("quantity default mode", { exact: true })
-    .selectOption("value");
-  await page.getByLabel("quantity default value", { exact: true }).fill("2");
-  await page
-    .getByLabel("product_id default mode", { exact: true })
-    .selectOption("value");
-  await page
-    .getByLabel("product_id default value", { exact: true })
-    .fill("9007199254740993");
+  await fieldDialog.getByLabel("product_id default mode", { exact: true }).selectOption("value");
+  await fieldDialog.getByLabel("product_id default value", { exact: true }).fill("9007199254740993");
+  await fieldDialog.getByRole("button", { name: "Save field" }).click();
+
+  await page.getByRole("button", { name: "Edit field quantity" }).click();
+  fieldDialog = page.getByRole("dialog", { name: "Edit database field" });
+  await fieldDialog.getByLabel("quantity default mode", { exact: true }).selectOption("value");
+  await fieldDialog.getByLabel("quantity default value", { exact: true }).fill("2");
+  await fieldDialog.getByRole("button", { name: "Save field" }).click();
+
   await page.getByRole("button", { name: "Add formula field" }).click();
-  await page.getByLabel("formula_1 label", { exact: true }).fill("Line total");
-  await page
-    .getByLabel("formula_1 expression")
-    .fill("Round([unit_price] * [quantity], 2)");
+  fieldDialog = page.getByRole("dialog", { name: "Edit database field" });
+  await fieldDialog.getByLabel("formula_1 expression").fill("Round([unit_price] * [quantity], 2)");
+  await fieldDialog.getByRole("button", { name: "Save field" }).click();
   await page.getByRole("button", { name: "Add formula field" }).click();
-  await page.getByLabel("formula_2 label", { exact: true }).fill("Summary");
-  await page
-    .getByLabel("formula_2 expression")
-    .fill("Concat(Upper([description]), ' x', [quantity])");
+  fieldDialog = page.getByRole("dialog", { name: "Edit database field" });
+  await fieldDialog.getByLabel("formula_2 expression").fill("Concat(Upper([description]), ' x', [quantity])");
+  await fieldDialog.getByRole("button", { name: "Save field" }).click();
   await page.getByRole("button", { name: "Save object", exact: true }).click();
   await expect(
     page.getByText("Object saved. Application behavior updated.", {
@@ -118,24 +102,30 @@ test("configure lookup copies and backend formula fields, create and replace rel
   await page
     .getByRole("combobox", { name: "Table", exact: true })
     .selectOption("z_copy_records");
-  await expect(page.getByLabel("formula_1 expression")).toHaveValue(
+  await page.getByRole("button", { name: "Edit field formula_1" }).click();
+  fieldDialog = page.getByRole("dialog", { name: "Edit database field" });
+  await expect(fieldDialog.getByLabel("formula_1 expression")).toHaveValue(
     "Round([unit_price] * [quantity], 2)",
   );
-  await expect(
-    page.getByLabel("product_id copy 1 allow editing", { exact: true }),
-  ).toBeChecked();
-  await expect(
-    page.getByLabel("product_id copy 2 allow editing", { exact: true }),
-  ).not.toBeChecked();
-  await expect(page.getByLabel("product_id copy 2 destination")).toHaveValue(
-    "unit_price",
-  );
-  await expect(
-    page.getByLabel("quantity default value", { exact: true }),
-  ).toHaveValue("2");
-  await expect(
-    criteria.getByLabel("Filter 1 value", { exact: true }),
-  ).toHaveValue("0");
+  await fieldDialog.getByRole("button", { name: "Cancel" }).click();
+  await page.getByRole("button", { name: "Edit field product_id" }).click();
+  fieldDialog = page.getByRole("dialog", { name: "Edit database field" });
+  await expect(fieldDialog.getByLabel("product_id copy 1 allow editing", { exact: true })).toBeChecked();
+  await expect(fieldDialog.getByLabel("product_id copy 2 allow editing", { exact: true })).not.toBeChecked();
+  await expect(fieldDialog.getByLabel("product_id copy 2 destination")).toHaveValue("unit_price");
+  criteria = fieldDialog.getByRole("region", { name: "product_id lookup criteria", exact: true });
+  await expect(criteria.getByLabel("Filter 1 value", { exact: true })).toHaveValue("0");
+  await fieldDialog.getByRole("button", { name: "Cancel" }).click();
+  await page.getByRole("button", { name: "Edit field quantity" }).click();
+  fieldDialog = page.getByRole("dialog", { name: "Edit database field" });
+  await expect(fieldDialog.getByLabel("quantity default value", { exact: true })).toHaveValue("2");
+  await fieldDialog.getByRole("button", { name: "Cancel" }).click();
+  await page.getByRole("button", { name: "Layout editor", exact: true }).click();
+  await page.getByRole("combobox", { name: "Connection", exact: true }).selectOption(String(id));
+  await page.getByRole("combobox", { name: "Table", exact: true }).selectOption("z_copy_records");
+  await page.getByLabel("formula_1 label", { exact: true }).fill("Line total");
+  await page.getByLabel("formula_2 label", { exact: true }).fill("Summary");
+  await page.getByRole("button", { name: "Save layout", exact: true }).click();
   await page.getByRole("button", { name: "Data browser", exact: true }).click();
   await page
     .getByRole("combobox", { name: "Connection", exact: true })

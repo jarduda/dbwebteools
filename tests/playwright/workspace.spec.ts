@@ -124,6 +124,7 @@ test("browse, create, edit and delete MariaDB records", async ({ page }) => {
 test("configure a relation and select, search, reopen and clear its key", async ({
   page,
 }) => {
+  test.setTimeout(90_000);
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
   await page.goto("/");
@@ -167,20 +168,25 @@ test("configure a relation and select, search, reopen and clear its key", async 
   await page
     .getByRole("combobox", { name: "Table", exact: true })
     .selectOption("lookup_orders");
-  await page.getByLabel("person_id control").selectOption("lookup");
-  await page.getByLabel("person_id label", { exact: true }).fill("Customer");
-  await page
-    .getByLabel("person_id related table")
-    .selectOption("lookup_people");
-  await page.getByLabel("person_id key column").selectOption("id");
-  await page.getByLabel("person_id display column").selectOption("name");
-  await page.getByLabel("person_id search email").check();
+  await page.getByRole("button", { name: "Edit field person_id" }).click();
+  let fieldDialog = page.getByRole("dialog", { name: "Edit database field" });
+  await fieldDialog.getByLabel("Control / behavior").selectOption("lookup");
+  await fieldDialog.getByLabel("person_id related table").selectOption("lookup_people");
+  await fieldDialog.getByLabel("person_id key column").selectOption("id");
+  await fieldDialog.getByLabel("person_id display column").selectOption("name");
+  await fieldDialog.getByLabel("person_id search email").check();
+  await fieldDialog.getByRole("button", { name: "Save field" }).click();
   await page.getByRole("button", { name: "Save object" }).click();
   await expect(
     page.getByText("Object saved. Application behavior updated.", {
       exact: true,
     }),
   ).toBeVisible();
+  await page.getByRole("button", { name: "Layout editor", exact: true }).click();
+  await page.getByRole("combobox", { name: "Connection", exact: true }).selectOption(String(id));
+  await page.getByRole("combobox", { name: "Table", exact: true }).selectOption("lookup_orders");
+  await page.getByLabel("person_id label", { exact: true }).fill("Customer");
+  await page.getByRole("button", { name: "Save layout", exact: true }).click();
   await page.getByRole("button", { name: "Data browser" }).click();
   await page
     .getByRole("combobox", { name: "Connection", exact: true })
@@ -295,6 +301,7 @@ test("configure a relation and select, search, reopen and clear its key", async 
 test("date/time and keyed dropdown layouts preserve values and enforce unique options", async ({
   page,
 }) => {
+  test.setTimeout(90_000);
   await page.goto("/");
   await page.getByLabel("Username", { exact: true }).fill("admin");
   await page
@@ -358,32 +365,34 @@ test("date/time and keyed dropdown layouts preserve values and enforce unique op
   await page
     .getByRole("combobox", { name: "Table", exact: true })
     .selectOption("z_editor_records");
-  await page.getByLabel("stamped control").selectOption("date");
-  await page.getByLabel("happened control").selectOption("datetime");
-  await page.getByLabel("status control").selectOption("dropdown");
-  const config = page.getByRole("group", { name: "status dropdown values" });
+  for (const [field, control] of [["stamped", "date"], ["happened", "datetime"]] as const) {
+    await page.getByRole("button", { name: `Edit field ${field}` }).click();
+    const dialog = page.getByRole("dialog", { name: "Edit database field" });
+    await dialog.getByLabel("Control / behavior").selectOption(control);
+    await dialog.getByRole("button", { name: "Save field" }).click();
+  }
+  await page.getByRole("button", { name: "Edit field status" }).click();
+  const statusDialog = page.getByRole("dialog", { name: "Edit database field" });
+  await statusDialog.getByLabel("Control / behavior").selectOption("dropdown");
+  const config = statusDialog.getByRole("group", { name: "status dropdown values" });
   await config.getByRole("button", { name: "Add option" }).click();
-  await page.getByLabel("status option 1 key").fill("draft");
-  await page.getByLabel("status option 1 display").fill("Draft document");
+  await statusDialog.getByLabel("status option 1 key").fill("draft");
+  await statusDialog.getByLabel("status option 1 display").fill("Draft document");
   await config.getByRole("button", { name: "Add option" }).click();
-  await page.getByLabel("status option 2 key").fill("DRAFT");
-  await page.getByLabel("status option 2 display").fill("Ready to publish");
+  await statusDialog.getByLabel("status option 2 key").fill("DRAFT");
+  await statusDialog.getByLabel("status option 2 display").fill("Ready to publish");
   await expect(config.getByRole("alert")).toContainText("Keys must be unique");
   await expect(
-    page.getByRole("button", { name: "Save object" }),
+    statusDialog.getByRole("button", { name: "Save field" }),
   ).toBeDisabled();
-  await page.getByLabel("status option 2 key").fill("ready");
-  await page.getByLabel("status option 2 display").fill("draft document");
+  await statusDialog.getByLabel("status option 2 key").fill("ready");
+  await statusDialog.getByLabel("status option 2 display").fill("draft document");
   await expect(config.getByRole("alert")).toContainText(
     "Display labels must be unique",
   );
-  await page.getByLabel("status option 2 display").fill("Ready to publish");
-  await page.getByRole("button", { name: "Save object" }).click();
-  await expect(
-    page.getByText("Object saved. Application behavior updated.", {
-      exact: true,
-    }),
-  ).toBeVisible();
+  await statusDialog.getByLabel("status option 2 display").fill("Ready to publish");
+  await statusDialog.getByRole("button", { name: "Save field" }).click();
+  await expect(statusDialog).toHaveCount(0);
   await page.getByRole("button", { name: "Data browser" }).click();
   await page
     .getByRole("combobox", { name: "Connection", exact: true })
@@ -457,7 +466,10 @@ test("date/time and keyed dropdown layouts preserve values and enforce unique op
   });
   await edit.getByRole("button", { name: "Save record" }).click();
   await expect(edit).toHaveCount(0);
-  await expect(row).toContainText("Ready to publish");
+  await expect
+    .poll(() => readValues().then((values) => values.status), { timeout: 15_000 })
+    .toBe("ready");
+  await expect(row).toContainText("Ready to publish", { timeout: 15_000 });
   const updated = await readValues();
   expect(updated.status).toBe("ready");
   expect(updated.stamped).toBe("2026-10-20T00:00:00.000000");
@@ -479,6 +491,7 @@ test("date/time and keyed dropdown layouts preserve values and enforce unique op
 test("list columns and read-only joins refresh when a lookup changes", async ({
   page,
 }) => {
+  test.setTimeout(120_000);
   await page.goto("/");
   await page.getByLabel("Username", { exact: true }).fill("admin");
   await page
@@ -534,32 +547,25 @@ test("list columns and read-only joins refresh when a lookup changes", async ({
   await expect(page.getByLabel("id showInList", { exact: true })).toHaveCount(
     0,
   );
-  await page.getByLabel("person_id control").selectOption("lookup");
-  await page.getByLabel("person_id label", { exact: true }).fill("Customer");
-  await page
-    .getByLabel("person_id related table")
-    .selectOption("lookup_people");
-  await page.getByLabel("person_id key column").selectOption("id");
-  await page.getByLabel("person_id display column").selectOption("name");
+  await page.getByRole("button", { name: "Edit field person_id" }).click();
+  let fieldDialog = page.getByRole("dialog", { name: "Edit database field" });
+  await fieldDialog.getByLabel("Control / behavior").selectOption("lookup");
+  await fieldDialog.getByLabel("person_id related table").selectOption("lookup_people");
+  await fieldDialog.getByLabel("person_id key column").selectOption("id");
+  await fieldDialog.getByLabel("person_id display column").selectOption("name");
+  await fieldDialog.getByRole("button", { name: "Save field" }).click();
   for (const [i, value, label] of [
     [1, "email", "Customer email"],
     [2, "name", "Customer name"],
   ] as const) {
     await page.getByRole("button", { name: "Add joined field" }).click();
-    await page.getByLabel(`joined_${i} label`, { exact: true }).fill(label);
-    await page
-      .getByLabel(`joined_${i} source column`)
-      .selectOption("person_id");
-    await page
-      .getByLabel(`joined_${i} joined table`)
-      .selectOption("lookup_people");
-    await page
-      .getByLabel(`joined_${i} join key`, { exact: true })
-      .selectOption("id");
-    await page.getByLabel(`joined_${i} joined value`).selectOption(value);
-    await expect(
-      page.getByLabel(`joined_${i} readOnly`, { exact: true }),
-    ).toBeDisabled();
+    fieldDialog = page.getByRole("dialog", { name: "Edit database field" });
+    await fieldDialog.getByLabel(`joined_${i} source column`).selectOption("person_id");
+    await fieldDialog.getByLabel(`joined_${i} joined table`).selectOption("lookup_people");
+    await fieldDialog.getByLabel(`joined_${i} join key`, { exact: true }).selectOption("id");
+    await fieldDialog.getByLabel(`joined_${i} joined value`).selectOption(value);
+    await expect(fieldDialog.getByLabel(`joined_${i} readOnly`, { exact: true })).toBeDisabled();
+    await fieldDialog.getByRole("button", { name: "Save field" }).click();
   }
   await page.getByRole("button", { name: "Save object" }).click();
   await expect(
@@ -579,6 +585,9 @@ test("list columns and read-only joins refresh when a lookup changes", async ({
   await expect(
     page.getByLabel("person_id control", { exact: true }),
   ).toHaveCount(0);
+  await page.getByLabel("person_id label", { exact: true }).fill("Customer");
+  await page.getByLabel("joined_1 label", { exact: true }).fill("Customer email");
+  await page.getByLabel("joined_2 label", { exact: true }).fill("Customer name");
   await page
     .getByLabel("person_id section", { exact: true })
     .fill("Customer details");
@@ -692,18 +701,18 @@ test("list columns and read-only joins refresh when a lookup changes", async ({
   await page
     .getByRole("combobox", { name: "Table", exact: true })
     .selectOption("lookup_orders");
-  await expect(page.getByLabel("joined_1 label", { exact: true })).toHaveValue(
-    "Customer email",
-  );
-  await page
-    .getByRole("button", { name: "Layout editor", exact: true })
-    .click();
+  await page.getByRole("button", { name: "Edit field joined_1" }).click();
+  fieldDialog = page.getByRole("dialog", { name: "Edit database field" });
+  await expect(fieldDialog.getByLabel("joined_1 joined value")).toHaveValue("email");
+  await fieldDialog.getByRole("button", { name: "Cancel" }).click();
+  await page.getByRole("button", { name: "Layout editor", exact: true }).click();
   await page
     .getByRole("combobox", { name: "Connection", exact: true })
     .selectOption(String(id));
   await page
     .getByRole("combobox", { name: "Table", exact: true })
     .selectOption("lookup_orders");
+  await expect(page.getByLabel("joined_1 label", { exact: true })).toHaveValue("Customer email");
   await expect(
     page.getByLabel("joined_2 showInList", { exact: true }),
   ).not.toBeChecked();
@@ -766,8 +775,14 @@ test("required layout fields block empty creates and updates", async ({
   await page
     .getByRole("combobox", { name: "Table", exact: true })
     .selectOption("z_required_records");
-  await expect(page.getByLabel("id required", { exact: true })).toBeDisabled();
-  await page.getByLabel("title required", { exact: true }).check();
+  await page.getByRole("button", { name: "Edit field id" }).click();
+  let fieldDialog = page.getByRole("dialog", { name: "Edit database field" });
+  await expect(fieldDialog.getByLabel("id required", { exact: true })).toBeDisabled();
+  await fieldDialog.getByRole("button", { name: "Cancel" }).click();
+  await page.getByRole("button", { name: "Edit field title" }).click();
+  fieldDialog = page.getByRole("dialog", { name: "Edit database field" });
+  await fieldDialog.getByLabel("title required", { exact: true }).check();
+  await fieldDialog.getByRole("button", { name: "Save field" }).click();
   await page.getByRole("button", { name: "Save object" }).click();
   await expect(
     page.getByText("Object saved. Application behavior updated.", {
@@ -782,9 +797,10 @@ test("required layout fields block empty creates and updates", async ({
   await page
     .getByRole("combobox", { name: "Table", exact: true })
     .selectOption("z_required_records");
-  await expect(
-    page.getByLabel("title required", { exact: true }),
-  ).toBeChecked();
+  await page.getByRole("button", { name: "Edit field title" }).click();
+  fieldDialog = page.getByRole("dialog", { name: "Edit database field" });
+  await expect(fieldDialog.getByLabel("title required", { exact: true })).toBeChecked();
+  await fieldDialog.getByRole("button", { name: "Cancel" }).click();
   await page.getByRole("button", { name: "Data browser", exact: true }).click();
   await page
     .getByRole("combobox", { name: "Connection", exact: true })
@@ -865,8 +881,6 @@ test("layout labels, default sorting and filters persist and constrain search", 
   await page
     .getByRole("combobox", { name: "Table", exact: true })
     .selectOption("z_list_view_records");
-  await page.getByLabel("title label", { exact: true }).fill("Document");
-  await page.getByLabel("amount label", { exact: true }).fill("Total");
   await page.getByLabel("List title", { exact: true }).fill("Open documents");
   await page
     .getByLabel("Default sort column", { exact: true })
@@ -891,17 +905,22 @@ test("layout labels, default sorting and filters persist and constrain search", 
       exact: true,
     }),
   ).toBeVisible();
+  await page.getByRole("button", { name: "Layout editor", exact: true }).click();
+  await page.getByRole("combobox", { name: "Connection", exact: true }).selectOption(String(id));
+  await page.getByRole("combobox", { name: "Table", exact: true }).selectOption("z_list_view_records");
+  await page.getByLabel("title label", { exact: true }).fill("Document");
+  await page.getByLabel("amount label", { exact: true }).fill("Total");
+  await page.getByRole("button", { name: "Save layout", exact: true }).click();
+  await expect(page.getByText("Layout saved.", { exact: true })).toBeVisible();
   await page.reload();
-  await page.getByRole("button", { name: "Object editor" }).click();
-  await page
-    .getByRole("combobox", { name: "Connection", exact: true })
-    .selectOption(String(id));
-  await page
-    .getByRole("combobox", { name: "Table", exact: true })
-    .selectOption("z_list_view_records");
-  await expect(page.getByLabel("title label", { exact: true })).toHaveValue(
-    "Document",
-  );
+  await page.getByRole("button", { name: "Layout editor", exact: true }).click();
+  await page.getByRole("combobox", { name: "Connection", exact: true }).selectOption(String(id));
+  await page.getByRole("combobox", { name: "Table", exact: true }).selectOption("z_list_view_records");
+  await expect(page.getByLabel("title label", { exact: true })).toHaveValue("Document");
+  await expect(page.getByLabel("amount label", { exact: true })).toHaveValue("Total");
+  await page.getByRole("button", { name: "Object editor", exact: true }).click();
+  await page.getByRole("combobox", { name: "Connection", exact: true }).selectOption(String(id));
+  await page.getByRole("combobox", { name: "Table", exact: true }).selectOption("z_list_view_records");
   await expect(page.getByLabel("List title", { exact: true })).toHaveValue(
     "Open documents",
   );

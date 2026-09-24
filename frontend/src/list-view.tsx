@@ -147,7 +147,7 @@ export function ListViewEditor({
             </label>
           </div>
           <p>
-            Field labels below are used in record forms and list headings.
+            Field labels from Layout editor are used in record forms and list headings.
             Filters apply to the list and its search results, not to table
             permissions or lookup choices.
           </p>
