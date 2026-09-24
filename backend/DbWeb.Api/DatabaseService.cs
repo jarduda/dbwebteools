@@ -274,6 +274,37 @@ public partial class DatabaseService(IDataProtectionProvider protection)
 
     static object Value(JsonElement e, ColumnInfo col)
     {
+        var emptyTextOrNumber =
+            e.ValueKind == JsonValueKind.String
+            && e.GetString() == ""
+            && col.Type
+                is "char"
+                    or "varchar"
+                    or "tinytext"
+                    or "text"
+                    or "mediumtext"
+                    or "longtext"
+                    or "tinyint"
+                    or "smallint"
+                    or "mediumint"
+                    or "int"
+                    or "integer"
+                    or "bigint"
+                    or "decimal"
+                    or "numeric"
+                    or "dec"
+                    or "fixed"
+                    or "float"
+                    or "double"
+                    or "real"
+                    or "bit"
+                    or "year";
+        if (emptyTextOrNumber)
+        {
+            if (!col.Nullable)
+                throw new ApiError(400, $"{col.Name} cannot be null.");
+            return DBNull.Value;
+        }
         if (e.ValueKind == JsonValueKind.Null)
         {
             if (!col.Nullable)

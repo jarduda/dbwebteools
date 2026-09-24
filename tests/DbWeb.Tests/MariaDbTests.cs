@@ -25,7 +25,7 @@ public class MariaDbTests
         var table = "test_" + Guid.NewGuid().ToString("N");
         await using var cmd = conn.CreateCommand();
         cmd.CommandText =
-            $"CREATE TABLE `{table}` (tenant INT NOT NULL DEFAULT 1,id INT NOT NULL DEFAULT 2,name VARCHAR(100) NOT NULL DEFAULT 'Default',amount DECIMAL(20,4), PRIMARY KEY(tenant,id)) ENGINE=InnoDB";
+            $"CREATE TABLE `{table}` (tenant INT NOT NULL DEFAULT 1,id INT NOT NULL DEFAULT 2,name VARCHAR(100) NOT NULL DEFAULT 'Default',note VARCHAR(100),amount DECIMAL(20,4), PRIMARY KEY(tenant,id)) ENGINE=InnoDB";
         await cmd.ExecuteNonQueryAsync();
         try
         {
@@ -59,7 +59,7 @@ public class MariaDbTests
             await service.Mutate(
                 conn,
                 table,
-                new(D("{\"name\":\"Updated\"}"), key, version),
+                new(D("{\"name\":\"Updated\",\"note\":\"\",\"amount\":\"\"}"), key, version),
                 "update"
             );
             var stale = await Assert.ThrowsAsync<ApiError>(() =>
@@ -70,10 +70,29 @@ public class MariaDbTests
                 await service.List(conn, table, 1, 25, null, false, null),
                 new JsonSerializerOptions(JsonSerializerDefaults.Web)
             );
+            Assert.Equal(
+                JsonValueKind.Null,
+                page.GetProperty("rows")[0].GetProperty("values").GetProperty("note").ValueKind
+            );
+            Assert.Equal(
+                JsonValueKind.Null,
+                page.GetProperty("rows")[0].GetProperty("values").GetProperty("amount").ValueKind
+            );
+            var currentVersion = page.GetProperty("rows")[0].GetProperty("version").GetString();
+            var emptyRequired = await Assert.ThrowsAsync<ApiError>(() =>
+                service.Mutate(
+                    conn,
+                    table,
+                    new(D("{\"name\":\"\"}"), key, currentVersion),
+                    "update"
+                )
+            );
+            Assert.Equal(400, emptyRequired.Status);
+            Assert.Equal("name cannot be null.", emptyRequired.Message);
             await service.Mutate(
                 conn,
                 table,
-                new(D("{}"), key, page.GetProperty("rows")[0].GetProperty("version").GetString()),
+                new(D("{}"), key, currentVersion),
                 "delete"
             );
             page = JsonSerializer.SerializeToElement(

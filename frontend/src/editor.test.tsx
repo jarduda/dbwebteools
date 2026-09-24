@@ -71,6 +71,81 @@ describe("Record editor", () => {
       expect(screen.getByRole("alert").textContent).toBe("Record changed"),
     );
   });
+  it("clears nullable text and number controls to NULL without a Set NULL option", async () => {
+    const save = vi.fn().mockResolvedValue(undefined);
+    render(
+      <RecordEditor
+        columns={[
+          { ...columns[1], nullable: true },
+          {
+            ...columns[1],
+            name: "amount",
+            type: "decimal",
+            nullable: true,
+          },
+          { ...columns[1], name: "notes", type: "text", nullable: true },
+        ]}
+        fields={[
+          {
+            name: "amount",
+            label: "Amount",
+            section: "",
+            order: 1,
+            hidden: false,
+            readOnly: false,
+            widget: "number",
+          },
+          {
+            name: "notes",
+            label: "Notes",
+            section: "",
+            order: 2,
+            hidden: false,
+            readOnly: false,
+            widget: "textarea",
+          },
+        ]}
+        row={{
+          values: { name: "Original", amount: "12.50", notes: "Original" },
+          version: "old",
+        }}
+        close={() => {}}
+        save={save}
+      />,
+    );
+    expect(screen.queryByText("Set NULL")).toBeNull();
+    fireEvent.change(screen.getByLabelText("name"), {
+      target: { value: "" },
+    });
+    fireEvent.change(screen.getByLabelText("Amount"), {
+      target: { value: "" },
+    });
+    fireEvent.change(screen.getByLabelText("Notes"), {
+      target: { value: "" },
+    });
+    fireEvent.click(screen.getByText("Save record"));
+    await waitFor(() =>
+      expect(save).toHaveBeenCalledWith({
+        name: null,
+        amount: null,
+        notes: null,
+      }),
+    );
+  });
+  it("requires non-nullable text on edit even when the database has a default", () => {
+    render(
+      <RecordEditor
+        columns={[{ ...columns[1], default: "Database default" }]}
+        fields={[]}
+        row={{ values: { name: "Original" }, version: "old" }}
+        close={() => {}}
+        save={async () => {}}
+      />,
+    );
+    expect((screen.getByLabelText("name") as HTMLInputElement).required).toBe(
+      true,
+    );
+  });
 });
 
 describe("Lookup editor validation", () => {

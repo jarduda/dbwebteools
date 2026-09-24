@@ -591,11 +591,8 @@ test("define pages and drill through related tabs with record keys and browser h
   expect((await totals()).order_count).toBe(2);
   await relatedRow.getByRole("button", { name: /Edit record/ }).click();
   editRelated = page.getByRole("dialog", { name: "Edit record", exact: true });
-  await editRelated
-    .getByLabel("amount", { exact: true })
-    .locator("..")
-    .getByRole("checkbox")
-    .check();
+  await expect(editRelated.getByText("Set NULL", { exact: true })).toHaveCount(0);
+  await editRelated.getByLabel("amount", { exact: true }).fill("");
   await editRelated
     .getByRole("button", { name: "Save record", exact: true })
     .click();
