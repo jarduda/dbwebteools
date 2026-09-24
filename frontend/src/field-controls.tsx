@@ -9,6 +9,10 @@ export function widgetFor(column: Column, field?: Field) {
       : "text";
 }
 
+export function hasDatabaseDefault(column: Column) {
+  return column.default != null && column.default.trim().toUpperCase() !== "NULL";
+}
+
 // Do not pass dates through JavaScript Date: that would introduce browser timezone shifts.
 // Native date/time controls support milliseconds. Raw, untouched database values remain in editor state.
 export function temporalInput(value: unknown, widget: string) {

@@ -108,6 +108,16 @@ test("design tables through field dialogs, persist edits and delete metadata", a
   await expect(dialog.getByLabel("Text length", { exact: true })).toHaveValue("120");
   await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
 
+  dialog = await startField("email", "email");
+  await expect(dialog.getByLabel("Text length", { exact: true })).toHaveCount(0);
+  await expect(dialog.getByText("Allow NULL", { exact: false })).toHaveCount(0);
+  const readOnlyBounds = await dialog.getByLabel("email readOnly", { exact: true }).boundingBox();
+  const requiredBounds = await dialog.getByLabel("email required", { exact: true }).boundingBox();
+  expect(Math.abs(readOnlyBounds!.y - requiredBounds!.y)).toBeLessThan(2);
+  await dialog.getByLabel("email required", { exact: true }).check();
+  await createField(dialog);
+  await expect(page.getByRole("region", { name: "Object definition" })).toContainText("varchar(255)");
+
   // Deletion has an explicit cancel path and removes both schema and object metadata on confirm.
   dialog = await startField("temporary_note", "text");
   await createField(dialog);
@@ -165,6 +175,12 @@ test("design tables through field dialogs, persist edits and delete metadata", a
   await page.getByRole("button", { name: "Add record", exact: true }).click();
   let editor = page.getByRole("dialog", { name: "Add a record", exact: true });
   await editor.getByLabel("name", { exact: true }).fill("Designer customer");
+  const email = editor.getByLabel("email", { exact: true });
+  await email.fill("not-an-email");
+  await editor.getByRole("button", { name: "Save record", exact: true }).click();
+  await expect(editor).toBeVisible();
+  expect(await email.evaluate((input: HTMLInputElement) => input.validity.typeMismatch)).toBe(true);
+  await email.fill("designer@example.com");
   await editor.getByRole("button", { name: "Save record", exact: true }).click();
   await expect(editor).toHaveCount(0);
   await page.getByRole("combobox", { name: "Table", exact: true }).selectOption(child);

@@ -1,7 +1,19 @@
 // @vitest-environment jsdom
-import { expect, it } from "vitest";
-import { pageHref, parsePageRoute, recordText } from "./record-pages";
+import React from "react";
+import { cleanup, render, screen } from "@testing-library/react";
+import { afterEach, expect, it, vi } from "vitest";
+import { pageHref, parsePageRoute, recordText, RecordPageView } from "./record-pages";
 import type { Column } from "./api";
+import { api } from "./api";
+
+vi.mock("./api", async (original) => {
+  const actual = await original<typeof import("./api")>();
+  return { ...actual, api: vi.fn() };
+});
+afterEach(() => {
+  cleanup();
+  vi.clearAllMocks();
+});
 const column = (name: string, key = false): Column => ({
   name,
   type: "varchar",
@@ -55,6 +67,55 @@ it("shows database NULL as blank while preserving zero", () => {
   expect(
     recordText({ values: { text: null }, version: "v" }, column("text")),
   ).toBe("");
+});
+
+it("shows record details without layout section names", async () => {
+  vi.mocked(api).mockResolvedValue({
+    page: {
+      id: 1,
+      connectionId: 1,
+      table: "customers",
+      name: "Customer",
+      linkColumn: "id",
+      tabs: [],
+    },
+    record: {
+      values: { id: 1, email: "person@example.com" },
+      version: "v",
+    },
+    columns: [column("id", true), column("email")],
+    fields: [
+      {
+        name: "id",
+        label: "ID",
+        section: "Identity",
+        order: 0,
+        hidden: false,
+        readOnly: true,
+        widget: "auto",
+      },
+      {
+        name: "email",
+        label: "Email",
+        section: "Contact details",
+        order: 1,
+        hidden: false,
+        readOnly: false,
+        widget: "email",
+      },
+    ],
+    canUpdate: false,
+  } as never);
+  render(
+    <RecordPageView
+      route={{ id: 1, key: JSON.stringify({ id: 1 }), trail: [] }}
+      editor={() => null}
+    />,
+  );
+  await screen.findByText("person@example.com");
+  expect(screen.queryByText("Identity")).toBeNull();
+  expect(screen.queryByText("Contact details")).toBeNull();
+  expect(screen.getByText("Email")).toBeTruthy();
 });
 
 it("encodes the full drill-down path and rejects malformed bookmarks", () => {

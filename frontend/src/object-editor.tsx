@@ -204,7 +204,7 @@ export function ObjectEditor({
   const draftColumn: Column | undefined = draft && fieldDraft
     ? columns.find((column) => column.name === fieldDraft.name) || {
         name: fieldDraft.name,
-        type: ({ text: "varchar", dropdown: "varchar", textarea: "longtext", number: "decimal", checkbox: "tinyint", date: "date", datetime: "datetime", lookup: "bigint" } as Record<string, string>)[fieldDraft.widget] || "varchar",
+        type: ({ text: "varchar", email: "varchar", dropdown: "varchar", textarea: "longtext", number: "decimal", checkbox: "tinyint", date: "date", datetime: "datetime", lookup: "bigint" } as Record<string, string>)[fieldDraft.widget] || "varchar",
         nullable: draft.nullable,
         primaryKey: false,
         generated: false,
@@ -232,6 +232,7 @@ export function ObjectEditor({
   const databaseType = (widget: string) =>
     ({
       text: "text",
+      email: "text",
       dropdown: "text",
       textarea: "longtext",
       number: "decimal",
@@ -522,7 +523,20 @@ export function ObjectEditor({
                     readOnly: widget === "sumup" || fieldDraft.readOnly,
                     required: widget === "sumup" ? false : fieldDraft.required,
                   });
-                  if (!editing)
+                  if (widget === "sumup") patch({ nullable: true });
+                  if (widget === "email")
+                    patch({
+                      ...(!editing
+                        ? {
+                            type: databaseType(widget),
+                            relatedTable: "",
+                            relatedKey: "",
+                            displayColumn: "",
+                          }
+                        : {}),
+                      length: 255,
+                    });
+                  else if (!editing)
                     patch({
                       type: databaseType(widget),
                       relatedTable: "",
@@ -541,6 +555,7 @@ export function ObjectEditor({
                 ) && <option value="sumup">Sum-up (stored total)</option>}
                 {Object.entries({
                   text: "Text",
+                  email: "Email",
                   textarea: "Text area",
                   number: "Number",
                   dropdown: "Dropdown",
@@ -557,7 +572,8 @@ export function ObjectEditor({
             </label>
             {showDatabaseAttributes &&
               (editing ? draft.type : databaseType(fieldDraft.widget)) ===
-                "text" && (
+                "text" &&
+              fieldDraft.widget !== "email" && (
                 <label>
                   Text length
                   <input
@@ -607,17 +623,6 @@ export function ObjectEditor({
                 </>
               )}
           </div>
-          {showDatabaseAttributes && (
-            <label className="check">
-              <input
-                type="checkbox"
-                checked={draft.nullable}
-                disabled={databaseAttributesDisabled}
-                onChange={(e) => patch({ nullable: e.target.checked })}
-              />
-              Allow NULL (empty values)
-            </label>
-          )}
           <div className="form-grid">
             <label className="check">
               <input
@@ -625,7 +630,11 @@ export function ObjectEditor({
                 aria-label={`${fieldDraft.name} readOnly`}
                 checked={fieldDraft.readOnly}
                 disabled={busy || ["join", "formula", "sumup"].includes(fieldDraft.widget)}
-                onChange={(e) => patchField({ readOnly: e.target.checked, required: e.target.checked ? false : fieldDraft.required })}
+                onChange={(e) => {
+                  patchField({ readOnly: e.target.checked, required: e.target.checked ? false : fieldDraft.required });
+                  if (e.target.checked && fieldDraft.required)
+                    patch({ nullable: true });
+                }}
               />
               Read-only
             </label>
@@ -635,7 +644,10 @@ export function ObjectEditor({
                 aria-label={`${fieldDraft.name} required`}
                 checked={!!fieldDraft.required}
                 disabled={busy || fieldDraft.readOnly || ["join", "formula", "sumup"].includes(fieldDraft.widget)}
-                onChange={(e) => patchField({ required: e.target.checked })}
+                onChange={(e) => {
+                  patchField({ required: e.target.checked });
+                  patch({ nullable: !e.target.checked });
+                }}
               />
               Required
             </label>
@@ -776,8 +788,8 @@ export function ObjectEditor({
           )}
           {!editing && (
             <p className="muted">
-              For a table with existing records, allow NULL first, populate the
-              column, then make it required.
+              For a table with existing records, create the optional field,
+              populate it, then edit it and mark it required.
             </p>
           )}
           <div className="form-actions">
@@ -899,7 +911,7 @@ export function ObjectEditor({
                                       ...blank(),
                                       name: field.name,
                                       type: schemaColumn ? kind(schemaColumn) : "text",
-                                      nullable: schemaColumn?.nullable ?? true,
+                                      nullable: !field.required,
                                       length: schemaColumn?.length || 255,
                                       precision: schemaColumn?.precision || 18,
                                       scale: schemaColumn?.scale ?? 2,

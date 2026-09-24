@@ -1,3 +1,4 @@
+using System.ComponentModel.DataAnnotations;
 using System.Text.Json;
 
 namespace DbWeb.Api;
@@ -24,6 +25,8 @@ public static class LayoutRules
             && column.Type is not "date" and not "datetime" and not "timestamp"
         )
             throw new ApiError(400, "Date controls require a DATE, DATETIME, or TIMESTAMP column.");
+        if (field.Widget == "email" && (column.Type != "varchar" || column.Length != 255))
+            throw new ApiError(400, "Email controls require a VARCHAR(255) column.");
         if (field.Widget != "dropdown")
         {
             if (field.Options is { Count: > 0 })
@@ -112,6 +115,29 @@ public static class LayoutRules
                 )
             )
                 throw new ApiError(400, $"Choose a configured dropdown value for {field.Name}.");
+    }
+
+    public static void ValidateEmailValues(
+        IEnumerable<LayoutField> fields,
+        Dictionary<string, JsonElement> values
+    )
+    {
+        var validator = new EmailAddressAttribute();
+        foreach (var field in fields.Where(f => f.Widget == "email"))
+        {
+            if (
+                !values.TryGetValue(field.Name, out var value)
+                || value.ValueKind == JsonValueKind.Null
+            )
+                continue;
+            if (value.ValueKind != JsonValueKind.String)
+                throw new ApiError(400, $"Enter a valid email address for {field.Label}.");
+            var text = value.GetString() ?? "";
+            if (text.Length == 0)
+                continue;
+            if (text.Length > 255 || text != text.Trim() || !validator.IsValid(text))
+                throw new ApiError(400, $"Enter a valid email address for {field.Label}.");
+        }
     }
 
     public static void AddDropdownLabels(List<LayoutField> fields, List<RecordRow> rows)

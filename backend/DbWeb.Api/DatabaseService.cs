@@ -16,6 +16,7 @@ public record ColumnInfo(
     bool Generated,
     bool AutoIncrement,
     string? Default,
+    long? Length = null,
     bool? CanWrite = null
 );
 
@@ -76,7 +77,7 @@ public partial class DatabaseService(IDataProtectionProvider protection)
         if (!(await Tables(db, transaction)).Contains(table, StringComparer.Ordinal))
             throw new ApiError(404, "Table not found.");
         await using var cmd = new MySqlCommand(
-            "SELECT COLUMN_NAME,DATA_TYPE,IS_NULLABLE,COLUMN_KEY,EXTRA,COLUMN_DEFAULT FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME=@table ORDER BY ORDINAL_POSITION",
+            "SELECT COLUMN_NAME,DATA_TYPE,IS_NULLABLE,COLUMN_KEY,EXTRA,COLUMN_DEFAULT,CHARACTER_MAXIMUM_LENGTH FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME=@table ORDER BY ORDINAL_POSITION",
             db
         );
         cmd.Parameters.AddWithValue("@table", table);
@@ -92,7 +93,8 @@ public partial class DatabaseService(IDataProtectionProvider protection)
                     r.GetString(3) == "PRI",
                     r.GetString(4).Contains("GENERATED"),
                     r.GetString(4).Contains("auto_increment"),
-                    r.IsDBNull(5) ? null : r.GetString(5)
+                    r.IsDBNull(5) ? null : r.GetString(5),
+                    r.IsDBNull(6) ? null : r.GetInt64(6)
                 )
             );
         return a;
@@ -446,6 +448,7 @@ public partial class DatabaseService(IDataProtectionProvider protection)
                     throw new ApiError(400, "This copied field is locked by its lookup mapping.");
             }
             LayoutRules.ValidateDropdownValues(fields ?? [], input.Values);
+            LayoutRules.ValidateEmailValues(fields ?? [], input.Values);
             LayoutRules.ValidateRequiredValues(fields ?? [], input.Values, current);
         }
         var names = input.Values.Keys.ToList();

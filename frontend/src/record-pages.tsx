@@ -18,7 +18,6 @@ import {
 } from "./api";
 import { Plus, Pencil, Search, Trash2 } from "lucide-react";
 import { cellText } from "./field-controls";
-import { groupBySection } from "./layout-fields";
 
 export function recordKey(row: Row, columns: Column[]) {
   if (row.keyToken) return { $record: row.keyToken };
@@ -263,8 +262,8 @@ export function RecordPageView({
               </div>
             </div>
             <div className="page-field-sections">
-              {groupBySection(
-                data.columns
+              <dl className="page-fields">
+                {data.columns
                   .filter(
                     (c) =>
                       !data.fields.find((f) => f.name === c.name)?.hidden,
@@ -275,37 +274,20 @@ export function RecordPageView({
                         data.columns.indexOf(a)) -
                       (data.fields.find((f) => f.name === b.name)?.order ??
                         data.columns.indexOf(b)),
-                  ),
-                (column) =>
-                  data.fields.find((field) => field.name === column.name)
-                    ?.section,
-              ).map((group) => (
-                <section
-                  className="page-field-section"
-                  aria-label={group.name || "Other fields"}
-                  key={group.name}
-                >
-                  {group.name && <h3>{group.name}</h3>}
-                  <dl className="page-fields">
-                    {group.items.map((c) => {
-                      const field = data.fields.find(
-                        (f) => f.name === c.name,
-                      );
-                      return (
-                        <div
-                          key={c.name}
-                          className={
-                            field?.widget === "textarea" ? "wide" : ""
-                          }
-                        >
-                          <dt>{field?.label || c.name}</dt>
-                          <dd>{recordText(data.record, c, field)}</dd>
-                        </div>
-                      );
-                    })}
-                  </dl>
-                </section>
-              ))}
+                  )
+                  .map((c) => {
+                    const field = data.fields.find((f) => f.name === c.name);
+                    return (
+                      <div
+                        key={c.name}
+                        className={field?.widget === "textarea" ? "wide" : ""}
+                      >
+                        <dt>{field?.label || c.name}</dt>
+                        <dd>{recordText(data.record, c, field)}</dd>
+                      </div>
+                    );
+                  })}
+              </dl>
             </div>
           </section>
           {data.page.tabs.length > 0 ? (

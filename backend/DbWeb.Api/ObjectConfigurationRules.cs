@@ -63,6 +63,7 @@ public static class ObjectConfigurationRules
                 {
                     "auto",
                     "text",
+                    "email",
                     "textarea",
                     "number",
                     "date",
