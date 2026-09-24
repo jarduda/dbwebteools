@@ -35,7 +35,7 @@ import {
   type PageSummary,
 } from "./api";
 import "./style.css";
-import { listColumns } from "./layout-fields";
+import { groupLayoutFields, listColumns } from "./layout-fields";
 import { filterSummary } from "./list-view";
 import { widgetFor, temporalInput, cellText } from "./field-controls";
 import { LookupInput } from "./lookups";
@@ -1791,9 +1791,25 @@ function Admin({
                       </tr>
                     </thead>
                     <tbody>
-                      {fields.map((field) => (
-                        <tr key={field.name}>
-                          <td>{field.name}</td>
+                      {groupLayoutFields(fields).flatMap((group, groupIndex) => [
+                        <tr
+                          className="layout-section-row"
+                          key={`section:${group.name}`}
+                        >
+                          <th
+                            colSpan={7}
+                            id={`layout-section-${groupIndex}`}
+                            scope="rowgroup"
+                          >
+                            {group.name || "No section"}
+                          </th>
+                        </tr>,
+                        ...group.fields.map((field) => (
+                          <tr
+                            aria-describedby={`layout-section-${groupIndex}`}
+                            key={`field:${field.name}`}
+                          >
+                            <td>{field.name}</td>
                           <td>
                             <input
                               aria-label={`${field.name} label`}
@@ -1906,8 +1922,9 @@ function Admin({
                               }
                             />
                           </td>
-                        </tr>
-                      ))}
+                          </tr>
+                        )),
+                      ])}
                     </tbody>
                   </table>
                 </div>

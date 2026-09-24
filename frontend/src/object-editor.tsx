@@ -939,34 +939,41 @@ export function ObjectEditor({
                   </tbody>
                 </table>
               </div>
-              <div className="actions object-field-actions">
-                <button
-                  type="button"
-                  className="primary"
-                  disabled={busy}
-                  onClick={() => {
-                    setDraft(blank());
-                    setFieldDraft({ name: "", label: "", readOnly: false, required: false, widget: "text" });
-                    setPendingVirtual(false);
-                    setEditing(false);
-                    setError("");
-                    setMessage("");
-                  }}
-                >
-                  Add field
-                </button>
-                <button
-                  type="button"
-                  disabled={
-                    objectFields.filter((f) =>
-                      ["join", "formula"].includes(f.widget),
-                    ).length >= 20
-                  }
-                  onClick={() => {
-                    let n = 1;
-                    while (objectFields.some((f) => f.name === `joined_${n}`))
-                      n++;
-                    const added: ObjectField = {
+              <div className="object-editor-footer">
+                <div className="actions object-field-actions">
+                  <button
+                    type="button"
+                    className="primary"
+                    disabled={busy}
+                    onClick={() => {
+                      setDraft(blank());
+                      setFieldDraft({
+                        name: "",
+                        label: "",
+                        readOnly: false,
+                        required: false,
+                        widget: "text",
+                      });
+                      setPendingVirtual(false);
+                      setEditing(false);
+                      setError("");
+                      setMessage("");
+                    }}
+                  >
+                    Add field
+                  </button>
+                  <button
+                    type="button"
+                    disabled={
+                      objectFields.filter((f) =>
+                        ["join", "formula"].includes(f.widget),
+                      ).length >= 20
+                    }
+                    onClick={() => {
+                      let n = 1;
+                      while (objectFields.some((f) => f.name === `joined_${n}`))
+                        n++;
+                      const added: ObjectField = {
                         name: `joined_${n}`,
                         label: "Related value",
                         readOnly: true,
@@ -978,93 +985,100 @@ export function ObjectEditor({
                           valueColumn: "",
                         },
                       };
-                    setObjectFields((old) => [...old, added]);
-                    setFieldDraft(added);
-                    setDraft({ ...blank(), name: added.name });
-                    setPendingVirtual(true);
-                    setEditing(true);
-                  }}
-                >
-                  Add joined field
-                </button>
-                <button
-                  type="button"
-                  disabled={
-                    objectFields.filter((f) =>
-                      ["join", "formula"].includes(f.widget),
-                    ).length >= 20
-                  }
-                  onClick={() => {
-                    let n = 1;
-                    while (objectFields.some((f) => f.name === `formula_${n}`))
-                      n++;
-                    const added: ObjectField = {
+                      setObjectFields((old) => [...old, added]);
+                      setFieldDraft(added);
+                      setDraft({ ...blank(), name: added.name });
+                      setPendingVirtual(true);
+                      setEditing(true);
+                    }}
+                  >
+                    Add joined field
+                  </button>
+                  <button
+                    type="button"
+                    disabled={
+                      objectFields.filter((f) =>
+                        ["join", "formula"].includes(f.widget),
+                      ).length >= 20
+                    }
+                    onClick={() => {
+                      let n = 1;
+                      while (
+                        objectFields.some((f) => f.name === `formula_${n}`)
+                      )
+                        n++;
+                      const added: ObjectField = {
                         name: `formula_${n}`,
                         label: "Calculated value",
                         readOnly: true,
                         widget: "formula",
                         formula: "",
                       };
-                    setObjectFields((old) => [...old, added]);
-                    setFieldDraft(added);
-                    setDraft({ ...blank(), name: added.name });
-                    setPendingVirtual(true);
-                    setEditing(true);
-                  }}
-                >
-                  Add formula field
-                </button>
+                      setObjectFields((old) => [...old, added]);
+                      setFieldDraft(added);
+                      setDraft({ ...blank(), name: added.name });
+                      setPendingVirtual(true);
+                      setEditing(true);
+                    }}
+                  >
+                    Add formula field
+                  </button>
+                </div>
+                <div className="actions object-save-actions">
+                  {objectFields.some((field) => field.widget === "sumup") && (
+                    <button
+                      disabled={busy || objectLoading}
+                      onClick={() =>
+                        void run(async () => {
+                          await api(
+                            `/admin/connections/${connection}/tables/${encodeURIComponent(table)}/sumups/recalculate`,
+                            "POST",
+                          );
+                          setMessage(
+                            "Sum-ups recalculated from all existing child records.",
+                          );
+                        })
+                      }
+                    >
+                      Recalculate saved sum-ups
+                    </button>
+                  )}
+                  <button
+                    className="primary"
+                    disabled={
+                      busy ||
+                      objectLoading ||
+                      !table ||
+                      objectFields.length === 0 ||
+                      objectFields.some(
+                        (field) =>
+                          field.widget === "dropdown" &&
+                          !!dropdownError(field.options || []),
+                      )
+                    }
+                    onClick={() =>
+                      void run(async () => {
+                        await api(
+                          `/admin/connections/${connection}/tables/${encodeURIComponent(table)}/object`,
+                          "PUT",
+                          {
+                            fields: objectFields,
+                            view: {
+                              ...objectView,
+                              label: objectView.label?.trim(),
+                            },
+                          },
+                        );
+                        setMessage(
+                          "Object saved. Application behavior updated.",
+                        );
+                      })
+                    }
+                  >
+                    Save object
+                  </button>
+                </div>
               </div>
-              {objectFields.some((field) => field.widget === "sumup") && (
-                <button
-                  disabled={busy || objectLoading}
-                  onClick={() =>
-                    void run(async () => {
-                      await api(
-                        `/admin/connections/${connection}/tables/${encodeURIComponent(table)}/sumups/recalculate`,
-                        "POST",
-                      );
-                      setMessage(
-                        "Sum-ups recalculated from all existing child records.",
-                      );
-                    })
-                  }
-                >
-                  Recalculate saved sum-ups
-                </button>
-              )}
-              <button
-                className="primary"
-                disabled={
-                  busy ||
-                  objectLoading ||
-                  !table ||
-                  objectFields.length === 0 ||
-                  objectFields.some(
-                    (field) =>
-                      field.widget === "dropdown" &&
-                      !!dropdownError(field.options || []),
-                  )
-                }
-                onClick={() =>
-                  void run(async () => {
-                    await api(
-                      `/admin/connections/${connection}/tables/${encodeURIComponent(table)}/object`,
-                      "PUT",
-                      {
-                        fields: objectFields,
-                        view: {
-                          ...objectView,
-                          label: objectView.label?.trim(),
-                        },
-                      },
-                    );
-                    setMessage("Object saved. Application behavior updated.");
-                  })
-                }
-              >
-                Save object
-              </button>
             </>
           )}
         </section>
