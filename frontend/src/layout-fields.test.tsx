@@ -8,7 +8,7 @@ import {
   cleanup,
 } from "@testing-library/react";
 import { afterEach, it, expect, vi } from "vitest";
-import { groupLayoutFields, listColumns } from "./layout-fields";
+import { groupBySection, listColumns } from "./layout-fields";
 import { RecordEditor } from "./main";
 import { type Column, type Field } from "./api";
 const columns: Column[] = [
@@ -98,25 +98,39 @@ it("keeps list visibility independent from editor visibility and uses list order
     ),
   ).toEqual([]);
 });
-it("groups fields by trimmed section and orders fields within each group", () => {
-  const grouped = groupLayoutFields([
-    { ...fields[2], section: "Contact", order: 3 },
-    { ...fields[0], section: "", order: 0 },
-    { ...fields[1], section: " Contact ", order: 1 },
-  ]);
+it("groups runtime fields by trimmed section while preserving first-section order", () => {
+  const grouped = groupBySection(
+    [
+      { name: "title", section: "Details" },
+      { name: "id", section: "" },
+      { name: "email", section: " Details " },
+    ],
+    (field) => field.section,
+  );
 
-  expect(grouped.map((group) => group.name)).toEqual(["", "Contact"]);
-  expect(
-    grouped.map((group) => group.fields.map((field) => field.name)),
-  ).toEqual([["id"], ["title", "joined_1"]]);
+  expect(grouped.map((group) => group.name)).toEqual(["Details", ""]);
+  expect(grouped.map((group) => group.items.map((field) => field.name))).toEqual(
+    [["title", "email"], ["id"]],
+  );
 });
-it("keeps an unnamed section distinct from a section named unsectioned", () => {
-  const grouped = groupLayoutFields([
-    { ...fields[0], section: "" },
-    { ...fields[1], section: "unsectioned" },
-  ]);
+it("renders one labeled field group for fields in the same editor section", () => {
+  render(
+    <RecordEditor
+      columns={columns.slice(0, 2)}
+      fields={fields.slice(0, 2).map((field) => ({
+        ...field,
+        hidden: false,
+        section: "Details",
+      }))}
+      row={null}
+      close={() => {}}
+      save={vi.fn().mockResolvedValue(undefined)}
+    />,
+  );
 
-  expect(grouped.map((group) => group.name)).toEqual(["", "unsectioned"]);
+  const section = screen.getByRole("group", { name: "Details" });
+  expect(section.querySelectorAll("label")).toHaveLength(2);
+  expect(screen.getAllByText("Details")).toHaveLength(1);
 });
 it("renders joined values read-only and never submits them with source changes", async () => {
   const save = vi.fn().mockResolvedValue(undefined);
@@ -133,6 +147,7 @@ it("renders joined values read-only and never submits them with source changes",
       save={save}
     />,
   );
+  expect(screen.getByRole("group", { name: "Other fields" })).toBeTruthy();
   expect(
     (screen.getByLabelText("Customer email") as HTMLInputElement).readOnly,
   ).toBe(true);

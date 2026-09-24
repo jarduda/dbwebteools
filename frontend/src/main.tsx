@@ -35,7 +35,7 @@ import {
   type PageSummary,
 } from "./api";
 import "./style.css";
-import { groupLayoutFields, listColumns } from "./layout-fields";
+import { groupBySection, listColumns } from "./layout-fields";
 import { filterSummary } from "./list-view";
 import { widgetFor, temporalInput, cellText } from "./field-controls";
 import { LookupInput } from "./lookups";
@@ -977,40 +977,49 @@ export function RecordEditor({
               : "The parent relation is filled automatically and locked. Copied fields follow the editing rules configured in the layout."}
           </p>
         )}
-        <div className="editor-grid">
-          {[...columns]
-            .sort(
-              (a, b) =>
-                (layout(a)?.order ?? columns.indexOf(a)) -
-                (layout(b)?.order ?? columns.indexOf(b)),
-            )
-            .filter((c) => !layout(c)?.hidden)
-            .map((c) => {
-              const l = layout(c),
-                widget = widgetFor(c, l),
-                disabled =
-                  lockedFields.includes(c.name) ||
-                  c.canWrite === false ||
-                  c.generated ||
-                  c.autoIncrement ||
-                  !!(row && c.primaryKey) ||
-                  l?.readOnly ||
-                  copyBusy ||
-                  lockedCopy(c.name);
-              return (
-                <label
-                  key={c.name}
-                  className={l?.widget === "textarea" ? "wide" : ""}
-                >
-                  {l?.section && <span className="eyebrow">{l.section}</span>}
-                  <span>
-                    {l?.label || c.name}{" "}
-                    <small>
-                      {c.type}
-                      {c.primaryKey ? " · Primary key" : ""}
-                      {l?.required ? " · Required" : ""}
-                    </small>
-                  </span>
+        <div className="editor-sections">
+          {groupBySection(
+            [...columns]
+              .sort(
+                (a, b) =>
+                  (layout(a)?.order ?? columns.indexOf(a)) -
+                  (layout(b)?.order ?? columns.indexOf(b)),
+              )
+              .filter((c) => !layout(c)?.hidden),
+            (column) => layout(column)?.section,
+          ).map((group) => (
+            <fieldset
+              className={`editor-section${group.name ? "" : " unsectioned"}`}
+              aria-label={group.name ? undefined : "Other fields"}
+              key={group.name}
+            >
+              {group.name && <legend>{group.name}</legend>}
+              <div className="editor-grid">
+                {group.items.map((c) => {
+                  const l = layout(c),
+                    widget = widgetFor(c, l),
+                    disabled =
+                      lockedFields.includes(c.name) ||
+                      c.canWrite === false ||
+                      c.generated ||
+                      c.autoIncrement ||
+                      !!(row && c.primaryKey) ||
+                      l?.readOnly ||
+                      copyBusy ||
+                      lockedCopy(c.name);
+                  return (
+                    <label
+                      key={c.name}
+                      className={l?.widget === "textarea" ? "wide" : ""}
+                    >
+                      <span>
+                        {l?.label || c.name}{" "}
+                        <small>
+                          {c.type}
+                          {c.primaryKey ? " · Primary key" : ""}
+                          {l?.required ? " · Required" : ""}
+                        </small>
+                      </span>
                   {l?.widget === "sumup" ? (
                     <input
                       aria-label={l.label || c.name}
@@ -1228,9 +1237,12 @@ export function RecordEditor({
                         Set NULL
                       </span>
                     )}
-                </label>
-              );
-            })}
+                    </label>
+                  );
+                })}
+              </div>
+            </fieldset>
+          ))}
         </div>
         <div className="form-actions">
           <button type="button" onClick={close}>
@@ -1791,25 +1803,9 @@ function Admin({
                       </tr>
                     </thead>
                     <tbody>
-                      {groupLayoutFields(fields).flatMap((group, groupIndex) => [
-                        <tr
-                          className="layout-section-row"
-                          key={`section:${group.name}`}
-                        >
-                          <th
-                            colSpan={7}
-                            id={`layout-section-${groupIndex}`}
-                            scope="rowgroup"
-                          >
-                            {group.name || "No section"}
-                          </th>
-                        </tr>,
-                        ...group.fields.map((field) => (
-                          <tr
-                            aria-describedby={`layout-section-${groupIndex}`}
-                            key={`field:${field.name}`}
-                          >
-                            <td>{field.name}</td>
+                      {fields.map((field) => (
+                        <tr key={field.name}>
+                          <td>{field.name}</td>
                           <td>
                             <input
                               aria-label={`${field.name} label`}
@@ -1922,9 +1918,8 @@ function Admin({
                               }
                             />
                           </td>
-                          </tr>
-                        )),
-                      ])}
+                        </tr>
+                      ))}
                     </tbody>
                   </table>
                 </div>
