@@ -146,6 +146,52 @@ describe("Record editor", () => {
       true,
     );
   });
+  it("does not present a SQL NULL default as a value", () => {
+    render(
+      <RecordEditor
+        columns={[{ ...columns[1], nullable: true, default: "NULL" }]}
+        fields={[]}
+        row={null}
+        close={() => {}}
+        save={async () => {}}
+      />,
+    );
+    expect((screen.getByLabelText("name") as HTMLInputElement).placeholder).toBe(
+      "Optional",
+    );
+    expect(screen.queryByPlaceholderText("Default: NULL")).toBeNull();
+  });
+  it("uses native email validation and submits empty optional email as NULL", async () => {
+    const save = vi.fn().mockResolvedValue(undefined);
+    render(
+      <RecordEditor
+        columns={[{ ...columns[1], name: "email", nullable: true }]}
+        fields={[
+          {
+            name: "email",
+            label: "Email address",
+            section: "",
+            order: 0,
+            hidden: false,
+            readOnly: false,
+            widget: "email",
+          },
+        ]}
+        row={{ values: { email: "person@example.com" }, version: "old" }}
+        close={() => {}}
+        save={save}
+      />,
+    );
+    const input = screen.getByLabelText("Email address") as HTMLInputElement;
+    expect(input.type).toBe("email");
+    expect(input.autocomplete).toBe("email");
+    expect(input.maxLength).toBe(255);
+    fireEvent.change(input, { target: { value: "not-an-email" } });
+    expect(input.checkValidity()).toBe(false);
+    fireEvent.change(input, { target: { value: "" } });
+    fireEvent.click(screen.getByText("Save record"));
+    await waitFor(() => expect(save).toHaveBeenCalledWith({ email: null }));
+  });
 });
 
 describe("Lookup editor validation", () => {

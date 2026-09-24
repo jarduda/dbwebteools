@@ -53,6 +53,7 @@ public partial class DatabaseService
         Value(value, column);
         var values = new Dictionary<string, JsonElement> { [field.Name] = value };
         LayoutRules.ValidateDropdownValues([field], values);
+        LayoutRules.ValidateEmailValues([field], values);
         LayoutRules.ValidateRequiredValues([field], values, null);
         return value;
     }

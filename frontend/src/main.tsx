@@ -37,7 +37,12 @@ import {
 import "./style.css";
 import { groupBySection, listColumns } from "./layout-fields";
 import { filterSummary } from "./list-view";
-import { widgetFor, temporalInput, cellText } from "./field-controls";
+import {
+  widgetFor,
+  temporalInput,
+  cellText,
+  hasDatabaseDefault,
+} from "./field-controls";
 import { LookupInput } from "./lookups";
 import { PageEditor } from "./page-editor";
 import {
@@ -962,7 +967,7 @@ export function RecordEditor({
                 !layout(c)?.hidden &&
                 !layout(c)?.readOnly &&
                 !c.nullable &&
-                c.default == null &&
+                !hasDatabaseDefault(c) &&
                 (values[c.name] == null || values[c.name] === "")
               )
                 throw new Error(
@@ -1131,7 +1136,8 @@ export function RecordEditor({
                       required={
                         !disabled &&
                         (!!l?.required ||
-                          (!c.nullable && (row != null || c.default == null)))
+                          (!c.nullable &&
+                            (row != null || !hasDatabaseDefault(c))))
                       }
                       onChange={(e) =>
                         setValues((old) => {
@@ -1149,7 +1155,7 @@ export function RecordEditor({
                           ? "Choose a value…"
                           : c.nullable
                             ? "No value (NULL)"
-                            : !row && c.default != null
+                            : !row && hasDatabaseDefault(c)
                               ? "Use database default"
                               : "Choose a value…"}
                       </option>
@@ -1172,7 +1178,8 @@ export function RecordEditor({
                       required={
                         !disabled &&
                         (!!l?.required ||
-                          (!c.nullable && (row != null || c.default == null)))
+                          (!c.nullable &&
+                            (row != null || !hasDatabaseDefault(c))))
                       }
                       disabled={disabled}
                       value={String(values[c.name] ?? "")}
@@ -1197,10 +1204,14 @@ export function RecordEditor({
                             ? "datetime-local"
                             : l?.widget === "number"
                               ? "number"
-                              : l?.widget === "checkbox"
-                                ? "checkbox"
-                                : "text"
+                              : l?.widget === "email"
+                                ? "email"
+                                : l?.widget === "checkbox"
+                                  ? "checkbox"
+                                  : "text"
                       }
+                      autoComplete={l?.widget === "email" ? "email" : undefined}
+                      maxLength={l?.widget === "email" ? 255 : undefined}
                       step="any"
                       checked={
                         l?.widget === "checkbox"
@@ -1219,7 +1230,7 @@ export function RecordEditor({
                           ? "Generated automatically"
                           : l?.required
                             ? "Required"
-                            : c.default != null
+                            : hasDatabaseDefault(c)
                               ? `Default: ${c.default}`
                               : c.nullable
                                 ? "Optional"
@@ -1229,7 +1240,8 @@ export function RecordEditor({
                         !disabled &&
                         widget !== "checkbox" &&
                         (!!l?.required ||
-                          (!c.nullable && (row != null || c.default == null)))
+                          (!c.nullable &&
+                            (row != null || !hasDatabaseDefault(c))))
                       }
                       onChange={(e) =>
                         setValues((old) => {
@@ -1239,7 +1251,7 @@ export function RecordEditor({
                             !e.target.value
                           ) {
                             if (c.nullable) next[c.name] = null;
-                            else if (!row && c.default != null)
+                            else if (!row && hasDatabaseDefault(c))
                               delete next[c.name];
                             else next[c.name] = "";
                           } else
@@ -1247,7 +1259,7 @@ export function RecordEditor({
                               widget === "checkbox"
                                 ? e.target.checked
                                 : c.nullable &&
-                                    ["text", "number"].includes(widget) &&
+                                    ["text", "email", "number"].includes(widget) &&
                                     e.target.value === ""
                                   ? null
                                   : e.target.value;

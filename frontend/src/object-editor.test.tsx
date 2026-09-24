@@ -101,6 +101,67 @@ describe("Object field workflow", () => {
     );
   });
 
+  it("creates a required email as non-null VARCHAR(255) without an Allow NULL control", async () => {
+    mockApi();
+    render(<ObjectEditor connections={[{ id: 1, name: "Local" } as never]} onChanged={() => {}} />);
+    await screen.findByText("varchar(100)");
+    fireEvent.click(screen.getByRole("button", { name: "Add field" }));
+    expect(screen.queryByText("Allow NULL (empty values)")).toBeNull();
+    fireEvent.change(screen.getByLabelText("Field name"), { target: { value: "email" } });
+    fireEvent.change(screen.getByLabelText("Control / behavior"), { target: { value: "email" } });
+    expect(screen.queryByLabelText("Text length")).toBeNull();
+    fireEvent.click(screen.getByLabelText("email required"));
+    fireEvent.click(screen.getByRole("button", { name: "Create field" }));
+    await waitFor(() =>
+      expect(api).toHaveBeenCalledWith(
+        "/admin/connections/1/schema/tables/things/columns",
+        "POST",
+        expect.objectContaining({
+          name: "email",
+          type: "text",
+          length: 255,
+          nullable: false,
+        }),
+      ),
+    );
+    expect(api).toHaveBeenCalledWith(
+      "/admin/connections/1/tables/things/object",
+      "PUT",
+      expect.objectContaining({
+        fields: expect.arrayContaining([
+          expect.objectContaining({ name: "email", widget: "email", required: true }),
+        ]),
+      }),
+    );
+  });
+
+  it("reconciles a legacy optional field with a non-null database column", async () => {
+    vi.mocked(api).mockImplementation(async (url, method = "GET") => {
+      if (url === "/connections/1/tables") return ["things"] as never;
+      if (url.includes("/schema/tables/things"))
+        return {
+          ...schema,
+          columns: schema.columns.map((column) =>
+            column.name === "title" ? { ...column, nullable: false } : column,
+          ),
+        } as never;
+      if (url.endsWith("/tables/things/object") && method === "GET")
+        return definition as never;
+      return undefined as never;
+    });
+    render(<ObjectEditor connections={[{ id: 1, name: "Local" } as never]} onChanged={() => {}} />);
+    await screen.findByText("varchar(100)");
+    fireEvent.click(screen.getByRole("button", { name: "Edit field title" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save field" }));
+    await waitFor(() =>
+      expect(api).toHaveBeenCalledWith(
+        "/admin/connections/1/schema/tables/things/modify-column",
+        "POST",
+        expect.objectContaining({ name: "title", nullable: true }),
+      ),
+    );
+  });
+
   it("requires explicit confirmation before deleting and calls delete after approval", async () => {
     mockApi();
     const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);

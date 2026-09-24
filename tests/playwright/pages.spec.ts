@@ -492,9 +492,9 @@ test("define pages and drill through related tabs with record keys and browser h
   await expect(
     page.getByRole("heading", { name: "Customer page", exact: true }),
   ).toBeVisible();
-  await expect(
-    page.getByRole("region", { name: "Contact", exact: true }),
-  ).toContainText("Customer name");
+  const mainRecord = page.getByRole("region", { name: "Main record", exact: true });
+  await expect(mainRecord).toContainText("Customer name");
+  await expect(mainRecord.getByText("Contact", { exact: true })).toHaveCount(0);
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(
     page.getByRole("tab", { name: "Orders", exact: true }),

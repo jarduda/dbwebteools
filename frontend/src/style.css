@@ -1338,6 +1338,17 @@ input[aria-readonly="true"] {
   gap: 8px;
   font-size: 13px;
 }
+.object-editor .form-grid label.check {
+  align-self: end;
+  flex-direction: row;
+  align-items: center;
+  min-height: 42px;
+}
+.object-editor .form-grid label.check input {
+  flex: 0 0 auto;
+  width: auto;
+  margin: 0;
+}
 .object-editor td small {
   display: block;
   max-width: 240px;
