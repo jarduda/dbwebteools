@@ -90,8 +90,11 @@ test("design tables through field dialogs, persist edits and delete metadata", a
   const saveButtonBounds = await page
     .getByRole("button", { name: "Save object", exact: true })
     .boundingBox();
+  const footerBounds = await page.locator(".object-editor-footer").boundingBox();
   expect(Math.abs(addButtonBounds!.y - saveButtonBounds!.y)).toBeLessThan(2);
   expect(addButtonBounds!.x).toBeLessThan(saveButtonBounds!.x);
+  expect(addButtonBounds!.x - footerBounds!.x).toBeGreaterThanOrEqual(23);
+  expect(addButtonBounds!.y - footerBounds!.y).toBeGreaterThanOrEqual(16);
   let dialog = await startField("name", "text");
   await dialog.getByLabel("Text length", { exact: true }).fill("80");
   await createField(dialog);

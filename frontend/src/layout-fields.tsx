@@ -1,25 +1,20 @@
 import { useEffect, useState } from "react";
 import { api, type Column, type Field, type Join } from "./api";
 
-export type LayoutFieldSection = {
-  name: string;
-  fields: Field[];
-};
-
-export function groupLayoutFields(fields: Field[]): LayoutFieldSection[] {
-  const groups = new Map<string, Field[]>();
-  [...fields]
-    .map((field, index) => ({ field, index }))
-    .sort((a, b) => a.field.order - b.field.order || a.index - b.index)
-    .forEach(({ field }) => {
-      const section = field.section.trim();
-      const group = groups.get(section);
-      if (group) group.push(field);
-      else groups.set(section, [field]);
-    });
-  return [...groups].map(([name, groupedFields]) => ({
+export function groupBySection<T>(
+  items: T[],
+  sectionName: (item: T) => string | undefined,
+) {
+  const groups = new Map<string, T[]>();
+  for (const item of items) {
+    const section = (sectionName(item) || "").trim();
+    const group = groups.get(section);
+    if (group) group.push(item);
+    else groups.set(section, [item]);
+  }
+  return [...groups].map(([name, groupedItems]) => ({
     name,
-    fields: groupedFields,
+    items: groupedItems,
   }));
 }
 

@@ -588,23 +588,13 @@ test("list columns and read-only joins refresh when a lookup changes", async ({
   await page.getByLabel("person_id label", { exact: true }).fill("Customer");
   await page.getByLabel("joined_1 label", { exact: true }).fill("Customer email");
   await page.getByLabel("joined_2 label", { exact: true }).fill("Customer name");
-  const personSection = page.getByLabel("person_id section", { exact: true });
-  await personSection.pressSequentially("Customer details");
-  await expect(personSection).toBeFocused();
-  await expect(personSection).toHaveValue("Customer details");
+  await page
+    .getByLabel("person_id section", { exact: true })
+    .fill("Customer details");
   await page
     .getByLabel("joined_1 section", { exact: true })
     .fill("Customer details");
-  for (const fieldName of ["person_id", "joined_1"]) {
-    const fieldRow = page
-      .getByLabel(`${fieldName} section`, { exact: true })
-      .locator("xpath=ancestor::tr");
-    await expect(
-      fieldRow.locator(
-        "xpath=preceding-sibling::tr[contains(@class, 'layout-section-row')][1]",
-      ),
-    ).toHaveText("Customer details");
-  }
+  await expect(page.locator(".layout-section-row")).toHaveCount(0);
   await page.getByLabel("id showInList", { exact: true }).uncheck();
   await page.getByLabel("person_id showInList", { exact: true }).uncheck();
   await page.getByLabel("title listOrder", { exact: true }).fill("1");
@@ -629,6 +619,12 @@ test("list columns and read-only joins refresh when a lookup changes", async ({
     name: "Add a record",
     exact: true,
   });
+  const customerSection = create.getByRole("group", {
+    name: "Customer details",
+    exact: true,
+  });
+  await expect(customerSection).toContainText("Customer");
+  await expect(customerSection).toContainText("Customer email");
   await create
     .getByLabel("title", { exact: true })
     .fill("Joined browser order");

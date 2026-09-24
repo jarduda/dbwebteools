@@ -492,6 +492,9 @@ test("define pages and drill through related tabs with record keys and browser h
   await expect(
     page.getByRole("heading", { name: "Customer page", exact: true }),
   ).toBeVisible();
+  await expect(
+    page.getByRole("region", { name: "Contact", exact: true }),
+  ).toContainText("Customer name");
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(
     page.getByRole("tab", { name: "Orders", exact: true }),
@@ -512,6 +515,9 @@ test("define pages and drill through related tabs with record keys and browser h
   });
   await page.getByRole("button", { name: "Edit record", exact: true }).click();
   const editor = page.getByRole("dialog", { name: "Edit record", exact: true });
+  await expect(
+    editor.getByRole("group", { name: "Contact", exact: true }),
+  ).toContainText("Customer name");
   await expect(editor.getByLabel("Customer name", { exact: true })).toHaveValue(
     "Page Alice",
   );

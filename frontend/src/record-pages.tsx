@@ -18,6 +18,7 @@ import {
 } from "./api";
 import { Plus, Pencil, Search, Trash2 } from "lucide-react";
 import { cellText } from "./field-controls";
+import { groupBySection } from "./layout-fields";
 
 export function recordKey(row: Row, columns: Column[]) {
   if (row.keyToken) return { $record: row.keyToken };
@@ -261,34 +262,51 @@ export function RecordPageView({
                 )}
               </div>
             </div>
-            <dl className="page-fields">
-              {data.columns
-                .filter(
-                  (c) => !data.fields.find((f) => f.name === c.name)?.hidden,
-                )
-                .sort(
-                  (a, b) =>
-                    (data.fields.find((f) => f.name === a.name)?.order ??
-                      data.columns.indexOf(a)) -
-                    (data.fields.find((f) => f.name === b.name)?.order ??
-                      data.columns.indexOf(b)),
-                )
-                .map((c) => {
-                  const field = data.fields.find((f) => f.name === c.name);
-                  return (
-                    <div
-                      key={c.name}
-                      className={field?.widget === "textarea" ? "wide" : ""}
-                    >
-                      {field?.section && (
-                        <span className="eyebrow">{field.section}</span>
-                      )}
-                      <dt>{field?.label || c.name}</dt>
-                      <dd>{recordText(data.record, c, field)}</dd>
-                    </div>
-                  );
-                })}
-            </dl>
+            <div className="page-field-sections">
+              {groupBySection(
+                data.columns
+                  .filter(
+                    (c) =>
+                      !data.fields.find((f) => f.name === c.name)?.hidden,
+                  )
+                  .sort(
+                    (a, b) =>
+                      (data.fields.find((f) => f.name === a.name)?.order ??
+                        data.columns.indexOf(a)) -
+                      (data.fields.find((f) => f.name === b.name)?.order ??
+                        data.columns.indexOf(b)),
+                  ),
+                (column) =>
+                  data.fields.find((field) => field.name === column.name)
+                    ?.section,
+              ).map((group) => (
+                <section
+                  className="page-field-section"
+                  aria-label={group.name || "Other fields"}
+                  key={group.name}
+                >
+                  {group.name && <h3>{group.name}</h3>}
+                  <dl className="page-fields">
+                    {group.items.map((c) => {
+                      const field = data.fields.find(
+                        (f) => f.name === c.name,
+                      );
+                      return (
+                        <div
+                          key={c.name}
+                          className={
+                            field?.widget === "textarea" ? "wide" : ""
+                          }
+                        >
+                          <dt>{field?.label || c.name}</dt>
+                          <dd>{recordText(data.record, c, field)}</dd>
+                        </div>
+                      );
+                    })}
+                  </dl>
+                </section>
+              ))}
+            </div>
           </section>
           {data.page.tabs.length > 0 ? (
             <section className="card related-card">
