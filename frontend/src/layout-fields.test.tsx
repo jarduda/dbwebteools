@@ -173,6 +173,13 @@ it("blocks whitespace and omitted required values on create and partial update",
       save={save}
     />,
   );
+  const label = screen
+    .getByLabelText("Title", { exact: true })
+    .closest("label");
+  expect(label?.querySelector(".required-marker")?.textContent?.trim()).toBe(
+    "*",
+  );
+  expect(label?.textContent).not.toContain("Required");
   fireEvent.submit(
     screen.getByRole("button", { name: "Save record" }).closest("form")!,
   );

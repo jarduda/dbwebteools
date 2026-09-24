@@ -1055,11 +1055,15 @@ export function RecordEditor({
                       className={l?.widget === "textarea" ? "wide" : ""}
                     >
                       <span>
-                        {l?.label || c.name}{" "}
+                        {l?.label || c.name}
+                        {l?.required && (
+                          <span className="required-marker" aria-hidden="true">
+                            *
+                          </span>
+                        )}{" "}
                         <small>
                           {c.type}
                           {c.primaryKey ? " · Primary key" : ""}
-                          {l?.required ? " · Required" : ""}
                         </small>
                       </span>
                   {l?.widget === "sumup" ? (
