@@ -464,7 +464,10 @@ test("date/time and keyed dropdown layouts preserve values and enforce unique op
   });
   await edit.getByRole("button", { name: "Save record" }).click();
   await expect(edit).toHaveCount(0);
-  await expect(row).toContainText("Ready to publish");
+  await expect
+    .poll(() => readValues().then((values) => values.status), { timeout: 15_000 })
+    .toBe("ready");
+  await expect(row).toContainText("Ready to publish", { timeout: 15_000 });
   const updated = await readValues();
   expect(updated.status).toBe("ready");
   expect(updated.stamped).toBe("2026-10-20T00:00:00.000000");
