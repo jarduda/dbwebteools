@@ -1134,12 +1134,19 @@ export function RecordEditor({
                       aria-label={l?.label || c.name}
                       required={
                         !disabled &&
-                        (!!l?.required || (!c.nullable && c.default == null))
+                        (!!l?.required ||
+                          (!c.nullable && (row != null || c.default == null)))
                       }
                       disabled={disabled}
                       value={String(values[c.name] ?? "")}
                       onChange={(e) =>
-                        setValues({ ...values, [c.name]: e.target.value })
+                        setValues({
+                          ...values,
+                          [c.name]:
+                            c.nullable && e.target.value === ""
+                              ? null
+                              : e.target.value,
+                        })
                       }
                     />
                   ) : (
@@ -1184,7 +1191,8 @@ export function RecordEditor({
                       required={
                         !disabled &&
                         widget !== "checkbox" &&
-                        (!!l?.required || (!c.nullable && c.default == null))
+                        (!!l?.required ||
+                          (!c.nullable && (row != null || c.default == null)))
                       }
                       onChange={(e) =>
                         setValues((old) => {
@@ -1201,7 +1209,11 @@ export function RecordEditor({
                             next[c.name] =
                               widget === "checkbox"
                                 ? e.target.checked
-                                : e.target.value;
+                                : c.nullable &&
+                                    ["text", "number"].includes(widget) &&
+                                    e.target.value === ""
+                                  ? null
+                                  : e.target.value;
                           return next;
                         })
                       }
@@ -1222,7 +1234,13 @@ export function RecordEditor({
                   {c.nullable &&
                     !l?.required &&
                     !disabled &&
-                    !["lookup", "dropdown"].includes(widget) && (
+                    ![
+                      "lookup",
+                      "dropdown",
+                      "text",
+                      "number",
+                      "textarea",
+                    ].includes(widget) && (
                       <span className="null-toggle">
                         <input
                           type="checkbox"

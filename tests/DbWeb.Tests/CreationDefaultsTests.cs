@@ -176,8 +176,8 @@ public partial class ApiTests
                 )
             ).EnsureSuccessStatusCode();
             cmd.CommandText =
-                $"SELECT CONCAT(title,'|',parent_id,'|',qty,'|',amount IS NULL,'|',LENGTH(note),'|',enabled,'|',copied) FROM `{child}` WHERE title='Override'";
-            Assert.Equal("Override|42|7|1|0|1|Second allowed", await cmd.ExecuteScalarAsync());
+                $"SELECT CONCAT(title,'|',parent_id,'|',qty,'|',amount IS NULL,'|',note IS NULL,'|',enabled,'|',copied) FROM `{child}` WHERE title='Override'";
+            Assert.Equal("Override|42|7|1|1|1|Second allowed", await cmd.ExecuteScalarAsync());
             Assert.Equal(
                 HttpStatusCode.BadRequest,
                 (

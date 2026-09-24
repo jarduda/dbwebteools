@@ -86,6 +86,10 @@ test("browse, create, edit and delete MariaDB records", async ({ page }) => {
     .getByRole("dialog")
     .getByLabel("name", { exact: true })
     .fill("Browser CRUD test");
+  await page
+    .getByRole("dialog")
+    .getByLabel("email", { exact: true })
+    .fill("clear-me@example.test");
   await page.getByRole("button", { name: "Save record" }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   const row = page.getByRole("row").filter({ hasText: "Browser CRUD test" });
@@ -98,11 +102,18 @@ test("browse, create, edit and delete MariaDB records", async ({ page }) => {
   );
 
   await row.getByRole("button", { name: /Edit record/ }).click();
-  await page
-    .getByRole("dialog")
-    .getByLabel("name", { exact: true })
-    .fill("Browser CRUD updated");
+  const edit = page.getByRole("dialog", { name: "Edit record", exact: true });
+  await edit.getByLabel("name", { exact: true }).fill("Browser CRUD updated");
+  await expect(edit.getByText("Set NULL", { exact: true })).toHaveCount(0);
+  await edit.getByLabel("email", { exact: true }).fill("");
+  const update = page.waitForRequest((request) =>
+    request.url().endsWith("/browser_records/update"),
+  );
   await page.getByRole("button", { name: "Save record" }).click();
+  expect((await update).postDataJSON().values).toEqual({
+    name: "Browser CRUD updated",
+    email: null,
+  });
   await expect(page.getByRole("dialog")).toHaveCount(0);
   const updated = page
     .getByRole("row")
