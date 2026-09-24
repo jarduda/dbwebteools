@@ -641,7 +641,7 @@ test("list columns and read-only joins refresh when a lookup changes", async ({
     .fill("Joined browser order");
   await expect(
     create.getByLabel("Customer email", { exact: true }),
-  ).toHaveValue("NULL");
+  ).toHaveValue("");
   await create
     .getByRole("button", { name: "Choose Customer", exact: true })
     .click();
@@ -704,7 +704,7 @@ test("list columns and read-only joins refresh when a lookup changes", async ({
     .getByRole("button", { name: "Clear Customer", exact: true })
     .click();
   await expect(edit.getByLabel("Customer email", { exact: true })).toHaveValue(
-    "NULL",
+    "",
   );
   await edit.getByRole("button", { name: "Save record", exact: true }).click();
   await expect(edit).toHaveCount(0);

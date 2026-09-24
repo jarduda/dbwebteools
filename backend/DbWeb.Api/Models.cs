@@ -183,6 +183,9 @@ public record DropdownOption(string Key, string Display);
 
 public record JoinConfig(string SourceColumn, string Table, string KeyColumn, string ValueColumn);
 
-public record JoinInput(Dictionary<string, System.Text.Json.JsonElement> Values);
+public record JoinInput(
+    Dictionary<string, System.Text.Json.JsonElement> Values,
+    List<string>? ChangedFields = null
+);
 
 public record FormulaValidationInput(string? Formula, List<LayoutField>? Fields);

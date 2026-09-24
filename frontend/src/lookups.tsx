@@ -487,11 +487,7 @@ function LookupDialog({
                   <tr key={String(r[lookup.keyColumn])}>
                     {data.columns.map((c) => (
                       <td key={c}>
-                        {r[c] == null
-                          ? data.numericColumns?.includes(c)
-                            ? ""
-                            : "NULL"
-                          : String(r[c])}
+                        {r[c] == null ? "" : String(r[c])}
                       </td>
                     ))}
                     <td>

@@ -276,7 +276,7 @@ test("configure lookup copies and backend formula fields, create and replace rel
     .getByRole("button", { name: "Clear product_id", exact: true })
     .click();
   await expect(editor.getByLabel("Line total", { exact: true })).toHaveValue(
-    "NULL",
+    "",
   );
   await editor.getByRole("button", { name: "Cancel", exact: true }).click();
   await row.getByRole("button", { name: /Delete record/ }).click();

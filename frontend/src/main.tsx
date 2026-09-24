@@ -837,6 +837,7 @@ export function RecordEditor({
   const [copiedLookups, setCopiedLookups] = useState<string[]>([]);
   const [joinBusy, setJoinBusy] = useState(false),
     [joinError, setJoinError] = useState("");
+  const resolvedJoinRequest = useRef<string | null>(null);
   const joinConfig = JSON.stringify(
     fields.filter(
       (f) => (f.widget === "join" && f.join) || f.widget === "formula",
@@ -859,25 +860,61 @@ export function RecordEditor({
   useEffect(() => {
     let active = true;
     if (joinConfig === "[]" || !base) return;
-    setJoinBusy(true);
+    const requestValues = JSON.parse(joinRequest) as Record<string, unknown>;
+    const resolvedValues = resolvedJoinRequest.current
+      ? (JSON.parse(resolvedJoinRequest.current) as Record<string, unknown>)
+      : null;
+    const changedFields = resolvedValues
+      ? [...new Set([...Object.keys(resolvedValues), ...Object.keys(requestValues)])].filter(
+          (name) =>
+            JSON.stringify(resolvedValues[name]) !==
+            JSON.stringify(requestValues[name]),
+        )
+      : null;
+    if (changedFields?.length === 0) return;
+    const initial = resolvedValues == null;
+    if (initial) {
+      setJoinBusy(true);
+      setJoinedValues({});
+      setCalculationErrors({});
+    }
     setJoinError("");
-    setJoinedValues({});
     const timer = setTimeout(() => {
       api<{
         values: Record<string, unknown>;
+        columns?: { name: string }[];
         calculationErrors?: Record<string, string>;
-      }>(base + "/joins/resolve", "POST", { values: JSON.parse(joinRequest) })
+      }>(base + "/joins/resolve", "POST", {
+        values: requestValues,
+        ...(changedFields ? { changedFields } : {}),
+      })
         .then((r) => {
           if (active) {
-            setJoinedValues(r.values);
-            setCalculationErrors(r.calculationErrors || {});
+            setJoinedValues((old) =>
+              initial ? r.values : { ...old, ...r.values },
+            );
+            setCalculationErrors((old) => {
+              if (initial) return r.calculationErrors || {};
+              const recalculated = new Set(
+                (r.columns || []).map((column) => column.name),
+              );
+              return {
+                ...Object.fromEntries(
+                  Object.entries(old).filter(
+                    ([name]) => !recalculated.has(name),
+                  ),
+                ),
+                ...(r.calculationErrors || {}),
+              };
+            });
+            resolvedJoinRequest.current = joinRequest;
           }
         })
         .catch((e) => {
           if (active) setJoinError(e.message);
         })
         .finally(() => {
-          if (active) setJoinBusy(false);
+          if (active && initial) setJoinBusy(false);
         });
     }, 200);
     return () => {

@@ -22,21 +22,7 @@ export function temporalInput(value: unknown, widget: string) {
 }
 
 export function cellText(value: unknown, column: Column, field?: Field) {
-  if (value == null)
-    return [
-      "tinyint",
-      "smallint",
-      "mediumint",
-      "int",
-      "bigint",
-      "decimal",
-      "float",
-      "double",
-      "bit",
-      "year",
-    ].includes(column.type) || field?.widget === "number"
-      ? ""
-      : "NULL";
+  if (value == null) return "";
   const widget = widgetFor(column, field);
   if (widget === "date") return String(value).slice(0, 10);
   if (widget === "datetime")

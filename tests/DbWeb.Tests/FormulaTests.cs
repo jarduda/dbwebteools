@@ -134,6 +134,71 @@ public class FormulaTests
         Assert.Throws<ApiError>(() => Formulas.Compile(formula, Columns));
 
     [Fact]
+    public void RecalculatesOnlyFormulasThatDependOnChangedFields()
+    {
+        var price = new LayoutField(
+            "price_calc",
+            "Price calculation",
+            "",
+            0,
+            false,
+            true,
+            "formula",
+            Formula: "[price] * 2"
+        );
+        var greeting = price with
+        {
+            Name = "greeting",
+            Formula = "Concat([name], ' x', [qty])",
+        };
+        var constantDropdown = price with
+        {
+            Name = "constant_dropdown",
+            Formula = "DropdownDisplay('name', 'a')",
+        };
+        var row = new RecordRow(
+            new()
+            {
+                ["price"] = "12.50",
+                ["qty"] = 2,
+                ["name"] = "Alice",
+            },
+            ""
+        );
+
+        List<LayoutField> fields =
+        [
+            .. DropdownFields,
+            price,
+            greeting,
+            constantDropdown,
+        ];
+        var columns = Formulas.Populate(
+            fields,
+            Columns,
+            [row],
+            new HashSet<string> { "price" }
+        );
+
+        Assert.Single(columns);
+        Assert.Equal("price_calc", columns[0].Name);
+        Assert.Equal("25.00", row.JoinedValues["price_calc"]);
+        Assert.False(row.JoinedValues.ContainsKey("greeting"));
+        Assert.False(row.JoinedValues.ContainsKey("constant_dropdown"));
+
+        var nameChange = new RecordRow(new(row.Values), "");
+        columns = Formulas.Populate(
+            fields,
+            Columns,
+            [nameChange],
+            new HashSet<string> { "name" }
+        );
+        Assert.Single(columns);
+        Assert.Equal("greeting", columns[0].Name);
+        Assert.False(nameChange.JoinedValues.ContainsKey("constant_dropdown"));
+    }
+
+    [Fact]
     public void HandlesNullErrorsAndExactLargeNumbersWithoutFailingPage()
     {
         var field = new LayoutField(

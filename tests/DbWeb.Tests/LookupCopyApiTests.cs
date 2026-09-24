@@ -319,6 +319,43 @@ public partial class ApiTests
                     .GetProperty("total")
                     .GetString()
             );
+            var selective = await admin.PostAsJsonAsync(
+                path + "/joins/resolve",
+                new
+                {
+                    values = new
+                    {
+                        copied_price = "4.25",
+                        qty = 3,
+                        copied_name = "Preview",
+                    },
+                    changedFields = new[] { "copied_price" },
+                }
+            );
+            selective.EnsureSuccessStatusCode();
+            var selectiveValues = (await selective.Content.ReadFromJsonAsync<JsonElement>())
+                .GetProperty("values");
+            Assert.Equal("12.75", selectiveValues.GetProperty("total").GetString());
+            Assert.False(selectiveValues.TryGetProperty("greeting", out _));
+            var unrelated = await admin.PostAsJsonAsync(
+                path + "/joins/resolve",
+                new
+                {
+                    values = new
+                    {
+                        copied_price = "4.25",
+                        qty = 3,
+                        copied_name = "Preview",
+                    },
+                    changedFields = new[] { "source_id" },
+                }
+            );
+            unrelated.EnsureSuccessStatusCode();
+            Assert.Empty(
+                (await unrelated.Content.ReadFromJsonAsync<JsonElement>())
+                    .GetProperty("values")
+                    .EnumerateObject()
+            );
             foreach (
                 var invalid in new[]
                 {
