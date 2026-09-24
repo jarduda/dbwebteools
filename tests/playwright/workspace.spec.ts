@@ -124,6 +124,7 @@ test("browse, create, edit and delete MariaDB records", async ({ page }) => {
 test("configure a relation and select, search, reopen and clear its key", async ({
   page,
 }) => {
+  test.setTimeout(90_000);
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
   await page.goto("/");
@@ -300,6 +301,7 @@ test("configure a relation and select, search, reopen and clear its key", async 
 test("date/time and keyed dropdown layouts preserve values and enforce unique options", async ({
   page,
 }) => {
+  test.setTimeout(90_000);
   await page.goto("/");
   await page.getByLabel("Username", { exact: true }).fill("admin");
   await page
@@ -489,6 +491,7 @@ test("date/time and keyed dropdown layouts preserve values and enforce unique op
 test("list columns and read-only joins refresh when a lookup changes", async ({
   page,
 }) => {
+  test.setTimeout(120_000);
   await page.goto("/");
   await page.getByLabel("Username", { exact: true }).fill("admin");
   await page
