@@ -1177,6 +1177,7 @@ api.MapPost(
         var columns = await s.Columns(c, table);
         if (
             input.Values == null
+            || input.ChangedFields?.Any(name => !columns.Any(col => col.Name == name)) == true
             || input.Values.Any(v =>
                 !columns.Any(col => col.Name == v.Key)
                 || v.Value.ValueKind
@@ -1187,8 +1188,10 @@ api.MapPost(
                         and not JsonValueKind.False
             )
         )
-            throw new ApiError(400, "Provide scalar values for existing source columns.");
-        (await FieldAccess.For(db, ctx, id, table)).RequireRead(input.Values.Keys);
+            throw new ApiError(400, "Provide scalar values and changed fields for existing source columns.");
+        (await FieldAccess.For(db, ctx, id, table)).RequireRead(
+            input.Values.Keys.Concat(input.ChangedFields ?? [])
+        );
         var layout = await db.Layouts.SingleOrDefaultAsync(x =>
             x.ConnectionId == id && x.Table == table
         );
@@ -1214,7 +1217,17 @@ api.MapPost(
             ),
             ""
         );
-        var joinedColumns = await PopulateJoins(db, ctx, id, c, s, safeFields, columns, [row]);
+        var joinedColumns = await PopulateJoins(
+            db,
+            ctx,
+            id,
+            c,
+            s,
+            safeFields,
+            columns,
+            [row],
+            input.ChangedFields?.ToHashSet()
+        );
         return new
         {
             values = row.JoinedValues,

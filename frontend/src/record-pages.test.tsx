@@ -46,7 +46,7 @@ it("uses friendly and virtual display values without exposing stored keys as lab
   ).toBe("12.34");
 });
 
-it("shows numeric NULL as blank but preserves zero and text NULL", () => {
+it("shows database NULL as blank while preserving zero", () => {
   for (const type of ["int", "decimal", "double", "bigint"]) {
     const c = { ...column("amount"), type, nullable: true };
     expect(recordText({ values: { amount: null }, version: "v" }, c)).toBe("");
@@ -54,7 +54,7 @@ it("shows numeric NULL as blank but preserves zero and text NULL", () => {
   }
   expect(
     recordText({ values: { text: null }, version: "v" }, column("text")),
-  ).toBe("NULL");
+  ).toBe("");
 });
 
 it("encodes the full drill-down path and rejects malformed bookmarks", () => {

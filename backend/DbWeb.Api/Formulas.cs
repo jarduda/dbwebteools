@@ -351,7 +351,8 @@ public static class Formulas
     public static List<ColumnInfo> Populate(
         List<LayoutField> fields,
         List<ColumnInfo> columns,
-        List<RecordRow> rows
+        List<RecordRow> rows,
+        HashSet<string>? changedFields = null
     )
     {
         var result = new List<ColumnInfo>();
@@ -359,6 +360,10 @@ public static class Formulas
         {
             var expression = Compile(field.Formula, columns, fields);
             var references = expression.GetParameterNames().Where(n => n != "null").ToList();
+            // Runtime recalculation follows row-value parameters only. Dependencies() also
+            // includes structural references such as DropdownDisplay's configured field.
+            if (changedFields != null && !references.Any(changedFields.Contains))
+                continue;
             result.Add(new(field.Name, "text", true, false, true, false, null));
             foreach (var row in rows)
             {

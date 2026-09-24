@@ -71,13 +71,16 @@ public static class RecordPresentation
         DatabaseService service,
         List<LayoutField> fields,
         List<ColumnInfo> sourceColumns,
-        List<RecordRow> rows
+        List<RecordRow> rows,
+        HashSet<string>? changedFields = null
     )
     {
         var result = new List<ColumnInfo>();
         foreach (var field in fields.Where(f => f.Widget == "join" && f.Join != null))
         {
             var join = field.Join!;
+            if (changedFields != null && !changedFields.Contains(join.SourceColumn))
+                continue;
             try
             {
                 await FieldAccess.Related(
@@ -116,7 +119,7 @@ public static class RecordPresentation
                     ? joined.GetValueOrDefault(DatabaseService.KeyText(key))
                     : null;
         }
-        result.AddRange(Formulas.Populate(fields, sourceColumns, rows));
+        result.AddRange(Formulas.Populate(fields, sourceColumns, rows, changedFields));
         return result;
     }
 }
