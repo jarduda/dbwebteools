@@ -125,6 +125,7 @@ export type ObjectDefinition = {
 };
 export type FieldPresentation = {
   name: string;
+  label: string;
   section: string;
   editorOrder: number;
   showInEditor: boolean;

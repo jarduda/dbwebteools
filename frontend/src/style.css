@@ -1314,3 +1314,14 @@ input[aria-readonly="true"] {
 .object-editor td:last-child {
   min-width: 230px;
 }
+
+.schema-column-form.modal {
+  width: min(900px, 100%);
+  box-sizing: border-box;
+}
+.schema-column-form.modal .lookup-config {
+  margin-top: 18px;
+}
+.object-definition table td {
+  vertical-align: top;
+}

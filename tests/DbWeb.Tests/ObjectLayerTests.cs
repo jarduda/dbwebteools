@@ -237,7 +237,7 @@ public partial class ApiTests
             Assert.DoesNotContain("section", objectJson, StringComparison.OrdinalIgnoreCase);
             var layoutJson = await admin.GetStringAsync(root + "/layout");
             Assert.DoesNotContain("widget", layoutJson, StringComparison.OrdinalIgnoreCase);
-            Assert.DoesNotContain("label", layoutJson, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("label", layoutJson, StringComparison.OrdinalIgnoreCase);
             Assert.Contains("section", layoutJson, StringComparison.OrdinalIgnoreCase);
 
             objectDefinition = objectDefinition with
@@ -264,7 +264,7 @@ public partial class ApiTests
                 .GetProperty("fields")
                 .EnumerateArray()
                 .Single(f => f.GetProperty("name").GetString() == "title");
-            Assert.Equal("Object title", title.GetProperty("label").GetString());
+            Assert.Equal("Title label", title.GetProperty("label").GetString());
             Assert.Equal("textarea", title.GetProperty("widget").GetString());
             Assert.Equal("Content", title.GetProperty("section").GetString());
             Assert.Equal(2, title.GetProperty("order").GetInt32());
@@ -278,6 +278,7 @@ public partial class ApiTests
                         f.Name == "title"
                             ? f with
                             {
+                                Label = "Layout title",
                                 Section = "Summary",
                                 EditorOrder = 8,
                                 ShowInEditor = true,
@@ -300,6 +301,7 @@ public partial class ApiTests
                 .GetProperty("fields")
                 .EnumerateArray()
                 .Single(f => f.GetProperty("name").GetString() == "title");
+            Assert.Equal("Layout title", title.GetProperty("label").GetString());
             Assert.Equal(8, title.GetProperty("order").GetInt32());
             Assert.Equal("Summary", title.GetProperty("section").GetString());
             Assert.False(title.GetProperty("showInList").GetBoolean());
@@ -331,6 +333,43 @@ public partial class ApiTests
                 .EnumerateArray()
                 .Single(f => f.GetProperty("name").GetString() == "title");
             Assert.Equal("Summary", title.GetProperty("section").GetString());
+            Assert.Equal("Layout title", title.GetProperty("label").GetString());
+
+            // Empty is an intentional Layout value, while omitted labels from older
+            // presentation clients preserve the existing value. Object saves cannot
+            // overwrite the Layout-owned label with a stale compatibility projection.
+            var clearedPresentation = presentation with
+            {
+                Fields = presentation.Fields.Select(f =>
+                        f.Name == "title" ? f with { Label = "" } : f
+                    )
+                    .ToList(),
+            };
+            (
+                await admin.PutAsJsonAsync(root + "/layout", clearedPresentation)
+            ).EnsureSuccessStatusCode();
+            objectDefinition = (
+                await admin.GetFromJsonAsync<ObjectDefinition>(root + "/object")
+            )! with
+            {
+                Fields = (
+                    await admin.GetFromJsonAsync<ObjectDefinition>(root + "/object")
+                )!.Fields.Select(f =>
+                        f.Name == "title" ? f with { Label = "Stale object label" } : f
+                    )
+                    .ToList(),
+            };
+            (
+                await admin.PutAsJsonAsync(root + "/object", objectDefinition)
+            ).EnsureSuccessStatusCode();
+            settings = await admin.GetFromJsonAsync<JsonElement>(
+                $"/api/connections/{connectionId}/tables/{table}/settings"
+            );
+            title = settings
+                .GetProperty("fields")
+                .EnumerateArray()
+                .Single(f => f.GetProperty("name").GetString() == "title");
+            Assert.Equal("", title.GetProperty("label").GetString());
 
             Assert.Equal(
                 HttpStatusCode.BadRequest,

@@ -27,7 +27,7 @@ export function JoinConfiguration({
   tables: string[];
   sources: string[];
   change: (join: Join) => void;
-  remove: () => void;
+  remove?: () => void;
 }) {
   const [schema, setSchema] = useState<{
     columns: Column[];
@@ -128,13 +128,15 @@ export function JoinConfiguration({
         Read-only. No matching record gives NULL. Related-table read permission
         is required.
       </p>
-      <button
-        type="button"
-        onClick={remove}
-        aria-label={`Remove ${field.name}`}
-      >
-        Remove joined field
-      </button>
+      {remove && (
+        <button
+          type="button"
+          onClick={remove}
+          aria-label={`Remove ${field.name}`}
+        >
+          Remove joined field
+        </button>
+      )}
       {error && (
         <p className="lookup-error" role="alert">
           {error}

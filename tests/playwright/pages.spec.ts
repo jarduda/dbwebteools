@@ -171,19 +171,16 @@ test("define pages and drill through related tabs with record keys and browser h
     ["order_total", "sum"],
     ["order_count", "count"],
   ]) {
-    await page
-      .getByLabel(`${field} control`, { exact: true })
-      .selectOption("sumup");
-    await page
-      .getByLabel(`${field} sum-up operation`, { exact: true })
-      .selectOption(operation);
-    await page
+    await page.getByRole("button", { name: `Edit field ${field}` }).click();
+    const fieldDialog = page.getByRole("dialog", { name: "Edit database field" });
+    await fieldDialog.getByLabel("Control / behavior", { exact: true }).selectOption("sumup");
+    await fieldDialog.getByLabel(`${field} sum-up operation`, { exact: true }).selectOption(operation);
+    await fieldDialog
       .getByLabel(`${field} sum-up relation`, { exact: true })
       .selectOption(JSON.stringify(["z_page_orders", "customer_id"]));
     if (operation === "sum")
-      await page
-        .getByLabel(`${field} sum-up source`, { exact: true })
-        .selectOption("line_total");
+      await fieldDialog.getByLabel(`${field} sum-up source`, { exact: true }).selectOption("line_total");
+    await fieldDialog.getByRole("button", { name: "Save field" }).click();
   }
   await page.getByRole("button", { name: "Save object", exact: true }).click();
   await expect(
@@ -208,7 +205,9 @@ test("define pages and drill through related tabs with record keys and browser h
   await page
     .getByRole("combobox", { name: "Table", exact: true })
     .selectOption("z_page_orders");
-  const formula = page.getByLabel("summary expression", { exact: true });
+  await page.getByRole("button", { name: "Edit field summary" }).click();
+  const formulaDialog = page.getByRole("dialog", { name: "Edit database field" });
+  const formula = formulaDialog.getByLabel("summary expression", { exact: true });
   await formula.fill("[missing] + 1");
   await page
     .getByRole("button", { name: "Validate summary formula", exact: true })
@@ -228,6 +227,7 @@ test("define pages and drill through related tabs with record keys and browser h
   expect((await validation.boundingBox())!.y).toBeLessThan(
     (await formula.boundingBox())!.y,
   );
+  await formulaDialog.getByRole("button", { name: "Save field" }).click();
   await page.getByRole("button", { name: "Page editor", exact: true }).click();
   async function start(name: string, table: string, link: string) {
     await page.getByRole("button", { name: "New page", exact: true }).click();

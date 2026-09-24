@@ -2,6 +2,8 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using DbWeb.Api;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using MySqlConnector;
 using Xunit;
 
@@ -212,6 +214,213 @@ public partial class ApiTests
             Assert.Equal(12.3456m, Convert.ToDecimal(await cmd.ExecuteScalarAsync()));
             cmd.CommandText = $"SELECT title FROM `{child}` WHERE record_id=1";
             Assert.Equal("Long title", await cmd.ExecuteScalarAsync());
+
+            // Deleting a field drops the physical column and every local metadata reference.
+            (await Column(child, new("obsolete", "text", Length: 30))).EnsureSuccessStatusCode();
+            var objectRoot = $"/api/admin/connections/{id}/tables/{child}";
+            var objectDefinition =
+                (await admin.GetFromJsonAsync<ObjectDefinition>(objectRoot + "/object"))!;
+            objectDefinition = objectDefinition with
+            {
+                Fields = objectDefinition.Fields.Append(
+                        new ObjectField(
+                            "obsolete_formula",
+                            "Obsolete formula",
+                            true,
+                            "formula",
+                            Formula: "[obsolete]"
+                        )
+                    )
+                    .ToList(),
+                View = new ListView(
+                    Sort: "obsolete",
+                    Filters: [new("obsolete", "contains", "old")]
+                ),
+            };
+            (
+                await admin.PutAsJsonAsync(objectRoot + "/object", objectDefinition)
+            ).EnsureSuccessStatusCode();
+            var policyUserResponse = await admin.PostAsJsonAsync(
+                "/api/admin/users",
+                new UserInput("field_delete_" + suffix, "member-password-12345", false, true)
+            );
+            policyUserResponse.EnsureSuccessStatusCode();
+            var policyUser = (await policyUserResponse.Content.ReadFromJsonAsync<JsonElement>())
+                .GetProperty("id")
+                .GetInt32();
+            (
+                await admin.PutAsJsonAsync(
+                    "/api/admin/grants",
+                    new TableGrant
+                    {
+                        UserId = policyUser,
+                        ConnectionId = id,
+                        Table = child,
+                        Read = true,
+                        Fields = new()
+                        {
+                            ["title"] = "read",
+                            ["obsolete"] = "read",
+                            ["obsolete_formula"] = "read",
+                        },
+                    }
+                )
+            ).EnsureSuccessStatusCode();
+            using (var cleanupScope = factory.Services.CreateScope())
+            {
+                var cleanupDb = cleanupScope.ServiceProvider.GetRequiredService<AppDb>();
+                cleanupDb.Pages.AddRange(
+                    new PageConfiguration
+                    {
+                        ConnectionId = id,
+                        Table = child,
+                        Name = "Child cleanup",
+                        LinkColumn = "record_id",
+                        TabsJson = JsonSerializer.Serialize(
+                            new List<RelatedTab>
+                            {
+                                new(
+                                    "parent-ref",
+                                    "Parent reference",
+                                    parent,
+                                    "obsolete",
+                                    "id",
+                                    ["name"]
+                                ),
+                                new(
+                                    "display-only",
+                                    "Display only",
+                                    child,
+                                    "record_id",
+                                    "title",
+                                    ["obsolete", "title"]
+                                ),
+                            }
+                        ),
+                    },
+                    new PageConfiguration
+                    {
+                        ConnectionId = id,
+                        Table = parent,
+                        Name = "Related cleanup",
+                        LinkColumn = "id",
+                        TabsJson = JsonSerializer.Serialize(
+                            new List<RelatedTab>
+                            {
+                                new(
+                                    "child-ref",
+                                    "Child reference",
+                                    child,
+                                    "id",
+                                    "obsolete",
+                                    ["title"]
+                                ),
+                            }
+                        ),
+                    },
+                    new PageConfiguration
+                    {
+                        ConnectionId = id,
+                        Table = child,
+                        Name = "Protected link",
+                        LinkColumn = "title",
+                    }
+                );
+                await cleanupDb.SaveChangesAsync();
+            }
+            Assert.Equal(
+                HttpStatusCode.BadRequest,
+                (await admin.DeleteAsync(objectRoot + "/fields/record_id")).StatusCode
+            );
+            Assert.Equal(
+                HttpStatusCode.Conflict,
+                (await admin.DeleteAsync(objectRoot + "/fields/title")).StatusCode
+            );
+            (
+                await admin.DeleteAsync(objectRoot + "/fields/obsolete")
+            ).EnsureSuccessStatusCode();
+            Assert.DoesNotContain(
+                (await Schema(child)).Columns,
+                column => column.Name == "obsolete"
+            );
+            var deletedObject =
+                (await admin.GetFromJsonAsync<ObjectDefinition>(objectRoot + "/object"))!;
+            Assert.DoesNotContain(
+                deletedObject.Fields,
+                field => field.Name is "obsolete" or "obsolete_formula"
+            );
+            Assert.Null(deletedObject.View!.Sort);
+            Assert.Empty(deletedObject.View.Filters!);
+            var deletedLayout =
+                (await admin.GetFromJsonAsync<LayoutPresentation>(objectRoot + "/layout"))!;
+            Assert.DoesNotContain(
+                deletedLayout.Fields,
+                field => field.Name is "obsolete" or "obsolete_formula"
+            );
+            using (var cleanupScope = factory.Services.CreateScope())
+            {
+                var cleanupDb = cleanupScope.ServiceProvider.GetRequiredService<AppDb>();
+                var pages = await cleanupDb.Pages.Where(page => page.ConnectionId == id).ToListAsync();
+                var childTabs = JsonSerializer.Deserialize<List<RelatedTab>>(
+                    pages.Single(page => page.Name == "Child cleanup").TabsJson
+                )!;
+                var keptTab = Assert.Single(childTabs);
+                Assert.Equal("display-only", keptTab.Id);
+                Assert.Equal(["title"], keptTab.Columns);
+                Assert.Empty(
+                    JsonSerializer.Deserialize<List<RelatedTab>>(
+                        pages.Single(page => page.Name == "Related cleanup").TabsJson
+                    )!
+                );
+            }
+            var policies = (await admin.GetFromJsonAsync<List<TableGrant>>("/api/admin/grants"))!;
+            var cleanedPolicy = Assert.Single(
+                policies,
+                grant =>
+                    grant.UserId == policyUser
+                    && grant.ConnectionId == id
+                    && grant.Table == child
+            );
+            Assert.Equal(new Dictionary<string, string> { ["title"] = "read" }, cleanedPolicy.Fields);
+
+            // Outgoing foreign keys are removed with their field, while incoming
+            // references produce a clear conflict instead of a database error.
+            (await Column(parent, new("code", "text", Length: 20))).EnsureSuccessStatusCode();
+            cmd.CommandText = $"UPDATE `{parent}` SET code='parent-code'";
+            await cmd.ExecuteNonQueryAsync();
+            (
+                await Column(parent, new("code", "text", false, Length: 20), true)
+            ).EnsureSuccessStatusCode();
+            cmd.CommandText = $"ALTER TABLE `{parent}` ADD UNIQUE KEY `uq_code` (`code`)";
+            await cmd.ExecuteNonQueryAsync();
+            (
+                await Column(
+                    child,
+                    new(
+                        "parent_code",
+                        "relation",
+                        RelatedTable: parent,
+                        RelatedKey: "code",
+                        DisplayColumn: "name"
+                    )
+                )
+            ).EnsureSuccessStatusCode();
+            Assert.Equal(
+                HttpStatusCode.Conflict,
+                (
+                    await admin.DeleteAsync(
+                        $"/api/admin/connections/{id}/tables/{parent}/fields/code"
+                    )
+                ).StatusCode
+            );
+            (
+                await admin.DeleteAsync(objectRoot + "/fields/parent_code")
+            ).EnsureSuccessStatusCode();
+            Assert.DoesNotContain(
+                (await Schema(child)).Columns,
+                column => column.Name == "parent_code"
+            );
+
             using var anon = factory.CreateClient();
             Assert.Equal(
                 HttpStatusCode.Unauthorized,

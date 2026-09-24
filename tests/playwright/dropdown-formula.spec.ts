@@ -73,20 +73,19 @@ test("dropdown display formula follows selection and saves only the key", async 
     .getByRole("combobox", { name: "Table", exact: true })
     .selectOption("z_formula_dropdown_records");
   await page.getByRole("button", { name: "Add formula field" }).click();
-  await page
-    .getByLabel("formula_1 label", { exact: true })
-    .fill("Status summary");
-  await page
+  const fieldDialog = page.getByRole("dialog", { name: "Edit database field" });
+  await fieldDialog
     .getByLabel("formula_1 expression")
     .fill(
       "Concat('Status: ', Coalesce(DropdownDisplay('status', [status]), 'Unknown'))",
     );
-  await page.getByRole("button", { name: "Save object", exact: true }).click();
-  await expect(
-    page.getByText("Object saved. Application behavior updated.", {
-      exact: true,
-    }),
-  ).toBeVisible();
+  await fieldDialog.getByRole("button", { name: "Save field" }).click();
+  await page.getByRole("button", { name: "Layout editor", exact: true }).click();
+  await page.getByRole("combobox", { name: "Connection", exact: true }).selectOption(String(id));
+  await page.getByRole("combobox", { name: "Table", exact: true }).selectOption("z_formula_dropdown_records");
+  await page.getByLabel("formula_1 label", { exact: true }).fill("Status summary");
+  await page.getByRole("button", { name: "Save layout", exact: true }).click();
+  await expect(page.getByText("Layout saved.", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Data browser", exact: true }).click();
   await page
     .getByRole("combobox", { name: "Connection", exact: true })

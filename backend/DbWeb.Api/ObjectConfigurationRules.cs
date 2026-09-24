@@ -25,6 +25,8 @@ public static class ObjectConfigurationRules
             throw new ApiError(400, "Layout must configure every object field exactly once.");
         if (presentation.Fields.Any(f => f.Section == null || f.Section.Length > 150))
             throw new ApiError(400, "Editor section names must be at most 150 characters.");
+        if (presentation.Fields.Any(f => f.Label == null || f.Label.Length > 150))
+            throw new ApiError(400, "Field labels must be at most 150 characters.");
         var required = definition.Fields.Where(f => f.Required).Select(f => f.Name).ToHashSet();
         if (presentation.Fields.Any(f => !f.ShowInEditor && required.Contains(f.Name)))
             throw new ApiError(400, "Required fields must remain visible in the editor.");
