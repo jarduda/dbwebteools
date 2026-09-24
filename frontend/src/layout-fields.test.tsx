@@ -8,7 +8,7 @@ import {
   cleanup,
 } from "@testing-library/react";
 import { afterEach, it, expect, vi } from "vitest";
-import { listColumns } from "./layout-fields";
+import { groupLayoutFields, listColumns } from "./layout-fields";
 import { RecordEditor } from "./main";
 import { type Column, type Field } from "./api";
 const columns: Column[] = [
@@ -97,6 +97,26 @@ it("keeps list visibility independent from editor visibility and uses list order
       fields.map((f) => ({ ...f, showInList: false })),
     ),
   ).toEqual([]);
+});
+it("groups fields by trimmed section and orders fields within each group", () => {
+  const grouped = groupLayoutFields([
+    { ...fields[2], section: "Contact", order: 3 },
+    { ...fields[0], section: "", order: 0 },
+    { ...fields[1], section: " Contact ", order: 1 },
+  ]);
+
+  expect(grouped.map((group) => group.name)).toEqual(["", "Contact"]);
+  expect(
+    grouped.map((group) => group.fields.map((field) => field.name)),
+  ).toEqual([["id"], ["title", "joined_1"]]);
+});
+it("keeps an unnamed section distinct from a section named unsectioned", () => {
+  const grouped = groupLayoutFields([
+    { ...fields[0], section: "" },
+    { ...fields[1], section: "unsectioned" },
+  ]);
+
+  expect(grouped.map((group) => group.name)).toEqual(["", "unsectioned"]);
 });
 it("renders joined values read-only and never submits them with source changes", async () => {
   const save = vi.fn().mockResolvedValue(undefined);

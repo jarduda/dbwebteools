@@ -1,6 +1,28 @@
 import { useEffect, useState } from "react";
 import { api, type Column, type Field, type Join } from "./api";
 
+export type LayoutFieldSection = {
+  name: string;
+  fields: Field[];
+};
+
+export function groupLayoutFields(fields: Field[]): LayoutFieldSection[] {
+  const groups = new Map<string, Field[]>();
+  [...fields]
+    .map((field, index) => ({ field, index }))
+    .sort((a, b) => a.field.order - b.field.order || a.index - b.index)
+    .forEach(({ field }) => {
+      const section = field.section.trim();
+      const group = groups.get(section);
+      if (group) group.push(field);
+      else groups.set(section, [field]);
+    });
+  return [...groups].map(([name, groupedFields]) => ({
+    name,
+    fields: groupedFields,
+  }));
+}
+
 export function listColumns(columns: Column[], fields: Field[]) {
   return columns
     .filter((c) => fields.find((f) => f.name === c.name)?.showInList !== false)

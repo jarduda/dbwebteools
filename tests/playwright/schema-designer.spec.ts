@@ -84,6 +84,14 @@ test("design tables through field dialogs, persist edits and delete metadata", a
     "Add joined field",
     "Add formula field",
   ]);
+  const addButtonBounds = await fieldActions
+    .getByRole("button", { name: "Add field", exact: true })
+    .boundingBox();
+  const saveButtonBounds = await page
+    .getByRole("button", { name: "Save object", exact: true })
+    .boundingBox();
+  expect(Math.abs(addButtonBounds!.y - saveButtonBounds!.y)).toBeLessThan(2);
+  expect(addButtonBounds!.x).toBeLessThan(saveButtonBounds!.x);
   let dialog = await startField("name", "text");
   await dialog.getByLabel("Text length", { exact: true }).fill("80");
   await createField(dialog);

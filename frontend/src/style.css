@@ -410,6 +410,29 @@ tbody tr:hover {
   align-items: center;
   gap: 8px;
 }
+.object-editor-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.object-editor-footer .actions {
+  flex-wrap: wrap;
+}
+.object-save-actions {
+  margin-left: auto;
+  justify-content: flex-end;
+}
+.layout-section-row th {
+  background: #f3f7ed;
+  color: #536b50;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-align: left;
+  text-transform: none;
+}
 .icon-btn {
   border: 0;
   background: transparent;
@@ -1297,6 +1320,18 @@ input[aria-readonly="true"] {
   }
   .object-editor form.card {
     padding: 16px;
+  }
+  .object-editor-footer,
+  .object-editor-footer .actions {
+    align-items: stretch;
+    width: 100%;
+  }
+  .object-editor-footer .actions {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+  .object-save-actions {
+    margin-left: 0;
   }
 }
 .object-editor .card-title {
