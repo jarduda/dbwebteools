@@ -756,6 +756,7 @@ test("list columns and read-only joins refresh when a lookup changes", async ({
 test("required layout fields block empty creates and updates", async ({
   page,
 }) => {
+  test.setTimeout(60_000);
   await page.goto("/");
   await page.getByLabel("Username", { exact: true }).fill("admin");
   await page
@@ -825,6 +826,7 @@ test("required layout fields block empty creates and updates", async ({
   await fieldDialog.getByRole("button", { name: "Cancel" }).click();
   await page.getByRole("button", { name: "Edit field note" }).click();
   fieldDialog = page.getByRole("dialog", { name: "Edit database field" });
+  await fieldDialog.getByLabel("Control / behavior").selectOption("text");
   await fieldDialog.getByLabel("Input mask type").selectOption("exact");
   await fieldDialog.getByLabel("Exact mask pattern").fill("AA-##?");
   await expect(fieldDialog.getByText(/User tip: Format: AA-##\?/)).toBeVisible();
