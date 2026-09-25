@@ -851,7 +851,7 @@ test("required layout fields block empty creates and updates", async ({
   await expect(dialog.getByRole("alert")).toContainText(
     "note must match the input mask.",
   );
-  await dialog.getByLabel("note", { exact: true }).fill("AB-12");
+  await dialog.getByLabel("note", { exact: true }).fill("AB-1");
   await dialog.getByRole("button", { name: "Save record" }).click();
   await expect(dialog).toHaveCount(0);
   const row = page
@@ -863,7 +863,7 @@ test("required layout fields block empty creates and updates", async ({
   await dialog.getByRole("button", { name: "Save record" }).click();
   await expect(dialog.getByRole("alert")).toHaveText("title is required.");
   await dialog.getByLabel("title", { exact: true }).fill(title);
-  await dialog.getByLabel("note", { exact: true }).fill("CD-345");
+  await dialog.getByLabel("note", { exact: true }).fill("CD-34");
   await dialog.getByRole("button", { name: "Save record" }).click();
   await expect(dialog).toHaveCount(0);
   await row.getByRole("button", { name: /Delete record/ }).click();
