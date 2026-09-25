@@ -96,8 +96,14 @@ export type Sumup = {
   lookupField: string;
   sourceField?: string | null;
 };
+export type InputMask = {
+  characterSet: "letters" | "digits" | "alphanumeric";
+  minimumLength: number;
+  requiredCharacters: string;
+};
 export type Field = {
   creationDefault?: { value?: string | null; isNull?: boolean } | null;
+  mask?: InputMask | null;
   sumup?: Sumup | null;
   name: string;
   label: string;

@@ -36,6 +36,7 @@ public static class RecordWrites
         )
         foreach (var copied in await service.CopyLookupValues(c, field.Lookup!, values[field.Name]))
             values[copied.Key] = copied.Value;
+        LayoutRules.ValidateMaskValues(fields, values);
         return values;
     }
 

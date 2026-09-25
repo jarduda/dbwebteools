@@ -45,6 +45,7 @@ import {
 } from "./field-controls";
 import { LookupInput } from "./lookups";
 import { PageEditor } from "./page-editor";
+import { maskTip, maskValueError } from "./field-mask";
 import {
   PageCell,
   RecordPageView,
@@ -962,8 +963,21 @@ export function RecordEditor({
                 throw new Error(`${layout(c)?.label || c.name} is required.`);
             }
             for (const c of writable) {
+              const field = layout(c);
               if (
-                layout(c)?.widget === "lookup" &&
+                field?.mask &&
+                !field.hidden &&
+                !field.readOnly &&
+                (!row || values[c.name] !== row.values[c.name])
+              ) {
+                const maskError = maskValueError(field.mask, values[c.name]);
+                if (maskError)
+                  throw new Error(
+                    `${field.label || c.name} must match the input mask. ${maskError}`,
+                  );
+              }
+              if (
+                field?.widget === "lookup" &&
                 !layout(c)?.hidden &&
                 !layout(c)?.readOnly &&
                 !c.nullable &&
@@ -1176,6 +1190,13 @@ export function RecordEditor({
                   ) : l?.widget === "textarea" ? (
                     <textarea
                       aria-label={l?.label || c.name}
+                      aria-describedby={l?.mask ? `mask-tip-${c.name}` : undefined}
+                      minLength={
+                        l?.mask && (!row || values[c.name] !== row.values[c.name])
+                          ? l.mask.minimumLength
+                          : undefined
+                      }
+                      title={l?.mask ? maskTip(l.mask) : undefined}
                       required={
                         !disabled &&
                         (!!l?.required ||
@@ -1225,7 +1246,14 @@ export function RecordEditor({
                   ) : (
                     <input
                       aria-label={l?.label || c.name}
+                      aria-describedby={l?.mask ? `mask-tip-${c.name}` : undefined}
                       disabled={disabled}
+                      minLength={
+                        l?.mask && (!row || values[c.name] !== row.values[c.name])
+                          ? l.mask.minimumLength
+                          : undefined
+                      }
+                      title={l?.mask ? maskTip(l.mask) : undefined}
                       type={
                         widget === "date"
                           ? "date"
@@ -1297,6 +1325,11 @@ export function RecordEditor({
                       }
                     />
                   )}{" "}
+                  {l?.mask && (
+                    <small id={`mask-tip-${c.name}`} className="field-tip">
+                      Required format: {maskTip(l.mask)}
+                    </small>
+                  )}
                   {widget === "date" &&
                     ["datetime", "timestamp"].includes(c.type) && (
                       <small>

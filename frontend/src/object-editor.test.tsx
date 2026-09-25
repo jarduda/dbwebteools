@@ -101,6 +101,62 @@ describe("Object field workflow", () => {
     );
   });
 
+  it("configures a safe text input mask and saves it in object metadata", async () => {
+    mockApi();
+    render(<ObjectEditor connections={[{ id: 1, name: "Local" } as never]} onChanged={() => {}} />);
+    await screen.findByText("varchar(100)");
+    fireEvent.click(screen.getByRole("button", { name: "Edit field title" }));
+    fireEvent.change(screen.getByLabelText("Allowed mask characters"), {
+      target: { value: "alphanumeric" },
+    });
+    fireEvent.change(screen.getByLabelText("Mask minimum length"), {
+      target: { value: "6" },
+    });
+    fireEvent.change(screen.getByLabelText("Mask required characters"), {
+      target: { value: "-/" },
+    });
+    expect(screen.getByText(/User tip: Use at least 6 characters/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Save field" }));
+    await waitFor(() =>
+      expect(api).toHaveBeenCalledWith(
+        "/admin/connections/1/tables/things/object",
+        "PUT",
+        expect.objectContaining({
+          fields: expect.arrayContaining([
+            expect.objectContaining({
+              name: "title",
+              mask: {
+                characterSet: "alphanumeric",
+                minimumLength: 6,
+                requiredCharacters: "-/",
+              },
+            }),
+          ]),
+        }),
+      ),
+    );
+  });
+
+  it("rejects invalid mask configuration in the field dialog", async () => {
+    mockApi();
+    render(<ObjectEditor connections={[{ id: 1, name: "Local" } as never]} onChanged={() => {}} />);
+    await screen.findByText("varchar(100)");
+    fireEvent.click(screen.getByRole("button", { name: "Edit field title" }));
+    fireEvent.change(screen.getByLabelText("Allowed mask characters"), {
+      target: { value: "letters" },
+    });
+    fireEvent.change(screen.getByLabelText("Mask required characters"), {
+      target: { value: "- -" },
+    });
+    expect(screen.getByRole("alert").textContent).toContain(
+      "Required characters must be punctuation without spaces.",
+    );
+    expect(
+      (screen.getByRole("button", { name: "Save field" }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
+  });
+
   it("creates a required email as non-null VARCHAR(255) without an Allow NULL control", async () => {
     mockApi();
     render(<ObjectEditor connections={[{ id: 1, name: "Local" } as never]} onChanged={() => {}} />);

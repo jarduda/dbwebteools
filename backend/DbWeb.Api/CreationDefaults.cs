@@ -54,6 +54,7 @@ public partial class DatabaseService
         var values = new Dictionary<string, JsonElement> { [field.Name] = value };
         LayoutRules.ValidateDropdownValues([field], values);
         LayoutRules.ValidateEmailValues([field], values);
+        LayoutRules.ValidateMaskValues([field], values);
         LayoutRules.ValidateRequiredValues([field], values, null);
         return value;
     }
@@ -88,6 +89,8 @@ public partial class DatabaseService
                 f.Widget == "lookup" && f.Lookup != null && values.ContainsKey(f.Name)
             )
         )
-            await CopyLookupValues(c, field.Lookup!, values[field.Name]);
+        foreach (var copied in await CopyLookupValues(c, field.Lookup!, values[field.Name]))
+            values[copied.Key] = copied.Value;
+        LayoutRules.ValidateMaskValues(fields, values);
     }
 }

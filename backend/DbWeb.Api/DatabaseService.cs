@@ -449,6 +449,7 @@ public partial class DatabaseService(IDataProtectionProvider protection)
             }
             LayoutRules.ValidateDropdownValues(fields ?? [], input.Values);
             LayoutRules.ValidateEmailValues(fields ?? [], input.Values);
+            LayoutRules.ValidateMaskValues(fields ?? [], input.Values);
             LayoutRules.ValidateRequiredValues(fields ?? [], input.Values, current);
         }
         var names = input.Values.Keys.ToList();
