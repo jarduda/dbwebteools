@@ -105,6 +105,7 @@ test("browse, create, edit and delete MariaDB records", async ({ page }) => {
   const edit = page.getByRole("dialog", { name: "Edit record", exact: true });
   await edit.getByLabel("name", { exact: true }).fill("Browser CRUD updated");
   await expect(edit.getByText("Set NULL", { exact: true })).toHaveCount(0);
+  await expect(edit.getByText("varchar", { exact: true })).toHaveCount(0);
   await edit.getByLabel("email", { exact: true }).fill("");
   const update = page.waitForRequest((request) =>
     request.url().endsWith("/browser_records/update"),

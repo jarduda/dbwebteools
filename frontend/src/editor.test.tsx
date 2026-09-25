@@ -132,6 +132,97 @@ describe("Record editor", () => {
       }),
     );
   });
+  it("hides database types and clears every nullable value control without a Set NULL toggle", async () => {
+    const save = vi.fn().mockResolvedValue(undefined);
+    render(
+      <RecordEditor
+        columns={[
+          { ...columns[1], name: "stamp", type: "timestamp", nullable: true },
+          { ...columns[1], name: "day", type: "date", nullable: true },
+          { ...columns[1], name: "status", type: "varchar", nullable: true },
+          { ...columns[1], name: "enabled", type: "tinyint", nullable: true },
+          { ...columns[1], name: "confirmed", type: "tinyint", nullable: true },
+        ]}
+        fields={[
+          {
+            name: "status",
+            label: "Status",
+            section: "",
+            order: 2,
+            hidden: false,
+            readOnly: false,
+            widget: "dropdown",
+            options: [{ key: "ready", display: "Ready" }],
+          },
+          {
+            name: "enabled",
+            label: "Enabled",
+            section: "",
+            order: 3,
+            hidden: false,
+            readOnly: false,
+            widget: "checkbox",
+          },
+          {
+            name: "confirmed",
+            label: "Confirmed",
+            section: "",
+            order: 4,
+            hidden: false,
+            readOnly: false,
+            required: true,
+            widget: "checkbox",
+          },
+        ]}
+        row={{
+          values: {
+            stamp: "2026-09-15T13:14:15",
+            day: "2026-09-15",
+            status: "ready",
+            enabled: true,
+            confirmed: null,
+          },
+          version: "old",
+        }}
+        close={() => {}}
+        save={save}
+      />,
+    );
+    expect(screen.queryByText("Set NULL", { exact: true })).toBeNull();
+    for (const type of ["timestamp", "date", "varchar", "tinyint"])
+      expect(screen.queryByText(type, { exact: true })).toBeNull();
+    expect(screen.getByText("Enabled", { exact: true })).toBeTruthy();
+    expect((screen.getByLabelText("Enabled") as HTMLSelectElement).value).toBe(
+      "true",
+    );
+    const confirmed = screen.getByLabelText("Confirmed") as HTMLSelectElement;
+    expect(confirmed.value).toBe("");
+    expect(confirmed.required).toBe(true);
+
+    fireEvent.change(screen.getByLabelText("stamp"), {
+      target: { value: "" },
+    });
+    fireEvent.change(screen.getByLabelText("day"), {
+      target: { value: "" },
+    });
+    fireEvent.change(screen.getByLabelText("Status"), {
+      target: { value: "" },
+    });
+    fireEvent.change(screen.getByLabelText("Enabled"), {
+      target: { value: "" },
+    });
+    fireEvent.change(confirmed, { target: { value: "false" } });
+    fireEvent.click(screen.getByText("Save record"));
+    await waitFor(() =>
+      expect(save).toHaveBeenCalledWith({
+        stamp: null,
+        day: null,
+        status: null,
+        enabled: null,
+        confirmed: false,
+      }),
+    );
+  });
   it("requires non-nullable text on edit even when the database has a default", () => {
     render(
       <RecordEditor
