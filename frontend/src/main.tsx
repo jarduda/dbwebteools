@@ -45,7 +45,12 @@ import {
 } from "./field-controls";
 import { LookupInput } from "./lookups";
 import { PageEditor } from "./page-editor";
-import { maskTip, maskValueError } from "./field-mask";
+import {
+  maskMaximumLength,
+  maskMinimumLength,
+  maskTip,
+  maskValueError,
+} from "./field-mask";
 import {
   PageCell,
   RecordPageView,
@@ -1193,7 +1198,13 @@ export function RecordEditor({
                       aria-describedby={l?.mask ? `mask-tip-${c.name}` : undefined}
                       minLength={
                         l?.mask && (!row || values[c.name] !== row.values[c.name])
-                          ? l.mask.minimumLength
+                          ? maskMinimumLength(l.mask)
+                          : undefined
+                      }
+                      maxLength={
+                        l?.mask?.pattern != null &&
+                        (!row || values[c.name] !== row.values[c.name])
+                          ? maskMaximumLength(l.mask)
                           : undefined
                       }
                       title={l?.mask ? maskTip(l.mask) : undefined}
@@ -1250,7 +1261,7 @@ export function RecordEditor({
                       disabled={disabled}
                       minLength={
                         l?.mask && (!row || values[c.name] !== row.values[c.name])
-                          ? l.mask.minimumLength
+                          ? maskMinimumLength(l.mask)
                           : undefined
                       }
                       title={l?.mask ? maskTip(l.mask) : undefined}
@@ -1268,7 +1279,14 @@ export function RecordEditor({
                                   : "text"
                       }
                       autoComplete={l?.widget === "email" ? "email" : undefined}
-                      maxLength={l?.widget === "email" ? 255 : undefined}
+                      maxLength={
+                        l?.widget === "email"
+                          ? 255
+                          : l?.mask?.pattern != null &&
+                              (!row || values[c.name] !== row.values[c.name])
+                            ? maskMaximumLength(l.mask)
+                            : undefined
+                      }
                       step="any"
                       checked={
                         l?.widget === "checkbox"

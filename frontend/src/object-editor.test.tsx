@@ -101,21 +101,28 @@ describe("Object field workflow", () => {
     );
   });
 
-  it("configures a safe text input mask and saves it in object metadata", async () => {
+  it("configures an exact positional mask and saves it in object metadata", async () => {
     mockApi();
     render(<ObjectEditor connections={[{ id: 1, name: "Local" } as never]} onChanged={() => {}} />);
     await screen.findByText("varchar(100)");
     fireEvent.click(screen.getByRole("button", { name: "Edit field title" }));
-    fireEvent.change(screen.getByLabelText("Allowed mask characters"), {
-      target: { value: "alphanumeric" },
+    fireEvent.change(screen.getByLabelText("Input mask type"), {
+      target: { value: "exact" },
     });
-    fireEvent.change(screen.getByLabelText("Mask minimum length"), {
-      target: { value: "6" },
+    fireEvent.change(screen.getByLabelText("Exact mask pattern"), {
+      target: { value: "" },
     });
-    fireEvent.change(screen.getByLabelText("Mask required characters"), {
-      target: { value: "-/" },
+    expect(screen.getByRole("alert").textContent).toContain(
+      "Exact mask patterns must be between 1 and 1024 characters.",
+    );
+    expect(
+      (screen.getByRole("button", { name: "Save field" }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
+    fireEvent.change(screen.getByLabelText("Exact mask pattern"), {
+      target: { value: "AA-##?" },
     });
-    expect(screen.getByText(/User tip: Use at least 6 characters/)).toBeTruthy();
+    expect(screen.getByText(/User tip: Format: AA-##\?/)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Save field" }));
     await waitFor(() =>
       expect(api).toHaveBeenCalledWith(
@@ -125,11 +132,7 @@ describe("Object field workflow", () => {
           fields: expect.arrayContaining([
             expect.objectContaining({
               name: "title",
-              mask: {
-                characterSet: "alphanumeric",
-                minimumLength: 6,
-                requiredCharacters: "-/",
-              },
+              mask: { pattern: "AA-##?" },
             }),
           ]),
         }),
@@ -142,6 +145,9 @@ describe("Object field workflow", () => {
     render(<ObjectEditor connections={[{ id: 1, name: "Local" } as never]} onChanged={() => {}} />);
     await screen.findByText("varchar(100)");
     fireEvent.click(screen.getByRole("button", { name: "Edit field title" }));
+    fireEvent.change(screen.getByLabelText("Input mask type"), {
+      target: { value: "rules" },
+    });
     fireEvent.change(screen.getByLabelText("Allowed mask characters"), {
       target: { value: "letters" },
     });

@@ -859,6 +859,81 @@ test("required layout fields block empty creates and updates", async ({
   await expect(row).toHaveCount(0);
 });
 
+test("exact field masks enforce required and optional typed positions", async ({ page }) => {
+  await page.goto("/");
+  await page.getByLabel("Username", { exact: true }).fill("admin");
+  await page
+    .getByLabel("Password", { exact: true })
+    .fill("browser-test-only-password");
+  await page.getByRole("button", { name: "Sign in →" }).click();
+  const id = await page.evaluate(
+    async ({ port, password }) => {
+      const { token } = await (await fetch("/api/auth/csrf")).json();
+      const response = await fetch("/api/admin/connections", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-CSRF-TOKEN": token },
+        body: JSON.stringify({
+          name: "Exact mask test",
+          host: "127.0.0.1",
+          port,
+          database: "dbweb_tests",
+          username: "root",
+          password,
+          verifyTls: false,
+        }),
+      });
+      if (!response.ok) throw new Error("Connection setup failed");
+      return (await response.json()).id as number;
+    },
+    {
+      port: process.env.CI ? 3306 : 33079,
+      password: process.env.CI ? "ci-disposable-root" : "",
+    },
+  );
+  await page.reload();
+  await page.getByRole("button", { name: "Object editor", exact: true }).click();
+  await page
+    .getByRole("combobox", { name: "Connection", exact: true })
+    .selectOption(String(id));
+  await page
+    .getByRole("combobox", { name: "Table", exact: true })
+    .selectOption("z_required_records");
+  await page.getByRole("button", { name: "Edit field note" }).click();
+  const fieldDialog = page.getByRole("dialog", { name: "Edit database field" });
+  await fieldDialog.getByLabel("Input mask type").selectOption("exact");
+  await fieldDialog.getByLabel("Exact mask pattern").fill("AA-##?");
+  await expect(fieldDialog.getByText(/User tip: Format: AA-##\?/)).toBeVisible();
+  await fieldDialog.getByRole("button", { name: "Save field" }).click();
+
+  await page.getByRole("button", { name: "Data browser", exact: true }).click();
+  await page
+    .getByRole("combobox", { name: "Connection", exact: true })
+    .selectOption(String(id));
+  await page
+    .getByRole("combobox", { name: "Table", exact: true })
+    .selectOption("z_required_records");
+  await page.getByRole("button", { name: "Add record", exact: true }).click();
+  const recordDialog = page.getByRole("dialog");
+  await expect(recordDialog.getByText(/Required format: Format: AA-##\?/)).toBeVisible();
+  await recordDialog.getByLabel("note", { exact: true }).fill("AB_123");
+  await recordDialog.getByRole("button", { name: "Save record" }).click();
+  await expect(recordDialog.getByRole("alert")).toContainText(
+    "note must match the input mask.",
+  );
+  await recordDialog.getByLabel("note", { exact: true }).fill("AB-12");
+  await recordDialog.getByRole("button", { name: "Save record" }).click();
+  await expect(recordDialog).toHaveCount(0);
+  const row = page
+    .getByRole("row")
+    .filter({ has: page.getByRole("cell", { name: "AB-12", exact: true }) });
+  await row.getByRole("button", { name: /Delete record/ }).click();
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Delete record", exact: true })
+    .click();
+  await expect(row).toHaveCount(0);
+});
+
 test("layout labels, default sorting and filters persist and constrain search", async ({
   page,
 }) => {
