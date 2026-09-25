@@ -247,6 +247,12 @@ In **Administration → Object editor**, click **Edit**, check **Required** for 
 
 Required fields must be editable stored columns; generated, auto-increment, read-only, and joined fields cannot be marked required. Layout editor prevents hiding a required field from the editor. On creation, a required value must be supplied explicitly, even if the database defines a default. Existing objects default to not required; database NOT NULL constraints still apply. Required behavior is stored in the object layer without changing MariaDB schema.
 
+### Text input masks
+
+For a Text or Text area field, open **Object editor → Edit → Input mask** to restrict non-empty values to letters, numbers, or letters and numbers; set a minimum length; and optionally require unique punctuation characters such as `-` or `/`. Required punctuation is permitted in addition to the selected character set and every configured character must appear at least once. Empty values remain governed by the field's Required/nullability settings.
+
+The record editor shows the complete rule below the field and checks changed values before saving. The backend independently enforces the same rule for creates, updates, related-record writes, lookup-copied values, and configured creation defaults. Masks are structured rather than arbitrary regular expressions.
+
 ### Object sorting, filters, and presentation layout
 
 In **Administration → Object editor**, choose a connection/table:

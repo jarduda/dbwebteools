@@ -97,6 +97,7 @@ public static class ObjectConfigurationRules
                     || !field.ReadOnly
                     || field.Lookup != null
                     || field.Options is { Count: > 0 }
+                    || field.Mask != null
                 )
                     throw new ApiError(
                         400,

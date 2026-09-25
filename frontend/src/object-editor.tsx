@@ -15,6 +15,7 @@ import { LookupConfiguration } from "./lookups";
 import { CreationDefaultEditor } from "./creation-defaults";
 import { FormulaValidator } from "./formula-validator";
 import { SumupConfiguration } from "./sumups";
+import { maskConfigurationError, maskTip } from "./field-mask";
 
 type SchemaColumn = {
   name: string;
@@ -241,6 +242,14 @@ export function ObjectEditor({
       datetime: "datetime",
       lookup: "relation",
     })[widget] || "text";
+  const fieldMaskError = fieldDraft?.mask
+    ? maskConfigurationError(fieldDraft.mask) ||
+      ((editing ? draft?.type : databaseType(fieldDraft.widget)) === "text" &&
+      draft &&
+      fieldDraft.mask.minimumLength > draft.length
+        ? "Minimum length cannot exceed the database field length."
+        : null)
+    : null;
   const closeFieldDialog = () => {
     if (pendingVirtual && fieldDraft)
       setObjectFields((old) =>
@@ -522,6 +531,9 @@ export function ObjectEditor({
                     creationDefault: widget === "sumup" ? null : fieldDraft.creationDefault,
                     readOnly: widget === "sumup" || fieldDraft.readOnly,
                     required: widget === "sumup" ? false : fieldDraft.required,
+                    mask: ["text", "textarea"].includes(widget)
+                      ? fieldDraft.mask
+                      : null,
                   });
                   if (widget === "sumup") patch({ nullable: true });
                   if (widget === "email")
@@ -631,7 +643,11 @@ export function ObjectEditor({
                 checked={fieldDraft.readOnly}
                 disabled={busy || ["join", "formula", "sumup"].includes(fieldDraft.widget)}
                 onChange={(e) => {
-                  patchField({ readOnly: e.target.checked, required: e.target.checked ? false : fieldDraft.required });
+                  patchField({
+                    readOnly: e.target.checked,
+                    required: e.target.checked ? false : fieldDraft.required,
+                    mask: e.target.checked ? null : fieldDraft.mask,
+                  });
                   if (e.target.checked && fieldDraft.required)
                     patch({ nullable: true });
                 }}
@@ -652,6 +668,88 @@ export function ObjectEditor({
               Required
             </label>
           </div>
+          {!fieldDraft.readOnly && ["text", "textarea"].includes(fieldDraft.widget) && (
+            <div className="lookup-config" aria-label="Input mask configuration">
+              <h3>Input mask</h3>
+              <div className="form-grid">
+                <label>
+                  Allowed characters
+                  <select
+                    aria-label="Allowed mask characters"
+                    disabled={busy}
+                    value={fieldDraft.mask?.characterSet || ""}
+                    onChange={(event) =>
+                      patchField({
+                        mask: event.target.value
+                          ? {
+                              characterSet: event.target.value as "letters" | "digits" | "alphanumeric",
+                              minimumLength: fieldDraft.mask?.minimumLength || 1,
+                              requiredCharacters: fieldDraft.mask?.requiredCharacters || "",
+                            }
+                          : null,
+                      })
+                    }
+                  >
+                    <option value="">No input mask</option>
+                    <option value="letters">Letters only</option>
+                    <option value="digits">Numbers only</option>
+                    <option value="alphanumeric">Letters and numbers</option>
+                  </select>
+                </label>
+                {fieldDraft.mask && (
+                  <>
+                    <label>
+                      Minimum length
+                      <input
+                        aria-label="Mask minimum length"
+                        type="number"
+                        required
+                        min={1}
+                        max={
+                          (editing ? draft.type : databaseType(fieldDraft.widget)) === "text"
+                            ? draft.length
+                            : 4000
+                        }
+                        value={fieldDraft.mask.minimumLength}
+                        disabled={busy}
+                        onChange={(event) =>
+                          patchField({
+                            mask: {
+                              ...fieldDraft.mask!,
+                              minimumLength: Number(event.target.value),
+                            },
+                          })
+                        }
+                      />
+                    </label>
+                    <label>
+                      Required characters
+                      <input
+                        aria-label="Mask required characters"
+                        maxLength={16}
+                        placeholder="For example: -/"
+                        value={fieldDraft.mask.requiredCharacters || ""}
+                        disabled={busy}
+                        onChange={(event) =>
+                          patchField({
+                            mask: {
+                              ...fieldDraft.mask!,
+                              requiredCharacters: event.target.value,
+                            },
+                          })
+                        }
+                      />
+                    </label>
+                  </>
+                )}
+              </div>
+              {fieldDraft.mask && (
+                <p className={fieldMaskError ? "alert" : "muted"} role={fieldMaskError ? "alert" : undefined}>
+                  {fieldMaskError || `User tip: ${maskTip(fieldDraft.mask)}`}
+                </p>
+              )}
+            </div>
+          )}
           {!['join', 'formula'].includes(fieldDraft.widget) && (
             <CreationDefaultEditor
               field={{ ...fieldDraft, section: "", order: 0, hidden: false, showInList: true }}
@@ -805,6 +903,7 @@ export function ObjectEditor({
               className="primary"
               disabled={
                 busy ||
+                !!fieldMaskError ||
                 (fieldDraft.widget === "dropdown" &&
                   !!dropdownError(fieldDraft.options || []))
               }

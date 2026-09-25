@@ -62,7 +62,8 @@ public record LayoutField(
     bool Required = false,
     string? Formula = null,
     SumupConfig? Sumup = null,
-    CreationDefault? CreationDefault = null
+    CreationDefault? CreationDefault = null,
+    InputMask? Mask = null
 );
 
 public class AuditEntry

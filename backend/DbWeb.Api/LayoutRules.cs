@@ -27,6 +27,7 @@ public static class LayoutRules
             throw new ApiError(400, "Date controls require a DATE, DATETIME, or TIMESTAMP column.");
         if (field.Widget == "email" && (column.Type != "varchar" || column.Length != 255))
             throw new ApiError(400, "Email controls require a VARCHAR(255) column.");
+        ValidateMaskConfiguration(field, column);
         if (field.Widget != "dropdown")
         {
             if (field.Options is { Count: > 0 })
@@ -71,6 +72,114 @@ public static class LayoutRules
                 400,
                 "Dropdown keys and display labels must each be unique (ignoring case)."
             );
+    }
+
+    public static void ValidateMaskConfiguration(LayoutField field, ColumnInfo column)
+    {
+        var mask = field.Mask;
+        if (mask == null)
+            return;
+        if (field.Widget is not "text" and not "textarea")
+            throw new ApiError(400, "Input masks are supported only for text controls.");
+        if (field.ReadOnly || column.Generated || column.AutoIncrement)
+            throw new ApiError(400, "Input masks require an editable stored field.");
+        if (
+            column.Type
+            is not "char"
+                and not "varchar"
+                and not "tinytext"
+                and not "text"
+                and not "mediumtext"
+                and not "longtext"
+        )
+            throw new ApiError(400, "Input masks require a text database field.");
+        if (mask.CharacterSet is not "letters" and not "digits" and not "alphanumeric")
+            throw new ApiError(
+                400,
+                "Choose letters, numbers, or letters and numbers for the input mask."
+            );
+        if (mask.MinimumLength is < 1 or > 4000)
+            throw new ApiError(400, "Input mask minimum length must be between 1 and 4000.");
+        if (column.Length is > 0 && mask.MinimumLength > column.Length)
+            throw new ApiError(
+                400,
+                "Input mask minimum length cannot exceed the database field length."
+            );
+        var required = mask.RequiredCharacters ?? "";
+        if (
+            required.Length > 16
+            || required.Any(c => c is < '!' or > '~' || char.IsLetterOrDigit(c))
+            || required.Distinct().Count() != required.Length
+        )
+            throw new ApiError(
+                400,
+                "Input mask required characters must be up to 16 unique punctuation characters without spaces."
+            );
+        if (mask.MinimumLength < required.Length)
+            throw new ApiError(
+                400,
+                "Input mask minimum length must allow all required characters."
+            );
+    }
+
+    public static string DescribeMask(InputMask mask)
+    {
+        var allowed = mask.CharacterSet switch
+        {
+            "letters" => "letters",
+            "digits" => "numbers",
+            _ => "letters and numbers",
+        };
+        var required = string.IsNullOrEmpty(mask.RequiredCharacters)
+            ? ""
+            : $" Include each of these characters: {string.Join(" ", mask.RequiredCharacters.Select(c => $"'{c}'"))}.";
+        return $"Use at least {mask.MinimumLength} characters. Allowed: {allowed}{(required.Length > 0 ? " plus the required characters." : ".")}{required}";
+    }
+
+    public static void ValidateMaskValues(
+        IEnumerable<LayoutField> fields,
+        Dictionary<string, JsonElement> values
+    )
+    {
+        foreach (var field in fields.Where(f => f.Mask != null))
+        {
+            if (
+                !values.TryGetValue(field.Name, out var value)
+                || value.ValueKind == JsonValueKind.Null
+            )
+                continue;
+            if (value.ValueKind != JsonValueKind.String)
+                throw new ApiError(
+                    400,
+                    $"{field.Label} must match the input mask. {DescribeMask(field.Mask!)}"
+                );
+            var text = value.GetString() ?? "";
+            if (text.Length == 0)
+                continue;
+            var mask = field.Mask!;
+            var required = mask.RequiredCharacters ?? "";
+            bool Allowed(char c) =>
+                required.Contains(c)
+                || mask.CharacterSet switch
+                {
+                    "letters" => c is >= 'A' and <= 'Z' or >= 'a' and <= 'z',
+                    "digits" => c is >= '0' and <= '9',
+                    _ =>
+                        c
+                        is >= 'A' and <= 'Z'
+                            or >= 'a' and <= 'z'
+                            or >= '0' and <= '9',
+                };
+            if (
+                text.Length < mask.MinimumLength
+                || text.Any(c => !Allowed(c))
+                || required.Any(c => !text.Contains(c))
+            )
+                throw new ApiError(
+                    400,
+                    $"{field.Label} must match the input mask. {DescribeMask(mask)}"
+                );
+        }
     }
 
     public static void ValidateRequiredValues(

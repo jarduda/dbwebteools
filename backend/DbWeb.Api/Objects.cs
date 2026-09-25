@@ -15,7 +15,14 @@ public record ObjectField(
     bool Required = false,
     string? Formula = null,
     SumupConfig? Sumup = null,
-    CreationDefault? CreationDefault = null
+    CreationDefault? CreationDefault = null,
+    InputMask? Mask = null
+);
+
+public record InputMask(
+    string CharacterSet,
+    int MinimumLength = 1,
+    string RequiredCharacters = ""
 );
 
 public record ObjectDefinition(
@@ -189,7 +196,8 @@ public static class ObjectModel
                 f.Required,
                 f.Formula,
                 f.Sumup,
-                f.CreationDefault
+                f.CreationDefault,
+                f.Mask
             ))
             .ToList();
         var layout = definition
@@ -262,7 +270,8 @@ public static class ObjectModel
                             f.Required,
                             f.Formula,
                             f.Sumup,
-                            f.CreationDefault
+                            f.CreationDefault,
+                            f.Mask
                         );
                     }
                 )
