@@ -156,9 +156,10 @@ describe("Record editor", () => {
         save={async () => {}}
       />,
     );
-    expect((screen.getByLabelText("name") as HTMLInputElement).placeholder).toBe(
-      "Optional",
-    );
+    expect(
+      (screen.getByLabelText("name") as HTMLInputElement).placeholder,
+    ).toBe("");
+    expect(screen.queryByPlaceholderText("Optional")).toBeNull();
     expect(screen.queryByPlaceholderText("Default: NULL")).toBeNull();
   });
   it("uses native email validation and submits empty optional email as NULL", async () => {

@@ -788,8 +788,9 @@ export function ObjectEditor({
           )}
           {!editing && (
             <p className="muted">
-              For a table with existing records, create the optional field,
-              populate it, then edit it and mark it required.
+              For a table with existing records, create the field without
+              marking it required, populate it, then edit it and mark it
+              required.
             </p>
           )}
           <div className="form-actions">

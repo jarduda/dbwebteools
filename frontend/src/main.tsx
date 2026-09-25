@@ -1237,7 +1237,7 @@ export function RecordEditor({
                             : hasDatabaseDefault(c)
                               ? `Default: ${c.default}`
                               : c.nullable
-                                ? "Optional"
+                                ? undefined
                                 : "Required"
                       }
                       required={
