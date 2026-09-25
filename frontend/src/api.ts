@@ -97,9 +97,10 @@ export type Sumup = {
   sourceField?: string | null;
 };
 export type InputMask = {
-  characterSet: "letters" | "digits" | "alphanumeric";
-  minimumLength: number;
-  requiredCharacters: string;
+  characterSet?: "letters" | "digits" | "alphanumeric" | "";
+  minimumLength?: number;
+  requiredCharacters?: string;
+  pattern?: string | null;
 };
 export type Field = {
   creationDefault?: { value?: string | null; isNull?: boolean } | null;

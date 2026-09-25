@@ -20,9 +20,10 @@ public record ObjectField(
 );
 
 public record InputMask(
-    string CharacterSet,
+    string CharacterSet = "",
     int MinimumLength = 1,
-    string RequiredCharacters = ""
+    string RequiredCharacters = "",
+    string? Pattern = null
 );
 
 public record ObjectDefinition(

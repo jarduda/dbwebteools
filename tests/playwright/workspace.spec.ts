@@ -756,6 +756,7 @@ test("list columns and read-only joins refresh when a lookup changes", async ({
 test("required layout fields block empty creates and updates", async ({
   page,
 }) => {
+  test.setTimeout(60_000);
   await page.goto("/");
   await page.getByLabel("Username", { exact: true }).fill("admin");
   await page
@@ -823,6 +824,13 @@ test("required layout fields block empty creates and updates", async ({
   fieldDialog = page.getByRole("dialog", { name: "Edit database field" });
   await expect(fieldDialog.getByLabel("title required", { exact: true })).toBeChecked();
   await fieldDialog.getByRole("button", { name: "Cancel" }).click();
+  await page.getByRole("button", { name: "Edit field note" }).click();
+  fieldDialog = page.getByRole("dialog", { name: "Edit database field" });
+  await fieldDialog.getByLabel("Control / behavior").selectOption("text");
+  await fieldDialog.getByLabel("Input mask type").selectOption("exact");
+  await fieldDialog.getByLabel("Exact mask pattern").fill("AA-##?");
+  await expect(fieldDialog.getByText(/User tip: Format: AA-##\?/)).toBeVisible();
+  await fieldDialog.getByRole("button", { name: "Save field" }).click();
   await page.getByRole("button", { name: "Data browser", exact: true }).click();
   await page
     .getByRole("combobox", { name: "Connection", exact: true })
@@ -832,11 +840,18 @@ test("required layout fields block empty creates and updates", async ({
     .selectOption("z_required_records");
   await page.getByRole("button", { name: "Add record", exact: true }).click();
   let dialog = page.getByRole("dialog");
+  await expect(dialog.getByText(/Required format: Format: AA-##\?/)).toBeVisible();
   await dialog.getByLabel("title", { exact: true }).fill("   ");
+  await dialog.getByLabel("note", { exact: true }).fill("AB_123");
   await dialog.getByRole("button", { name: "Save record" }).click();
-  await expect(dialog.getByRole("alert")).toHaveText("title is required.");
+  await expect(dialog.getByRole("alert")).toContainText("title is required.");
   const title = "Required browser " + Date.now();
   await dialog.getByLabel("title", { exact: true }).fill(title);
+  await dialog.getByRole("button", { name: "Save record" }).click();
+  await expect(dialog.getByRole("alert")).toContainText(
+    "note must match the input mask.",
+  );
+  await dialog.getByLabel("note", { exact: true }).fill("AB-1");
   await dialog.getByRole("button", { name: "Save record" }).click();
   await expect(dialog).toHaveCount(0);
   const row = page
@@ -848,7 +863,7 @@ test("required layout fields block empty creates and updates", async ({
   await dialog.getByRole("button", { name: "Save record" }).click();
   await expect(dialog.getByRole("alert")).toHaveText("title is required.");
   await dialog.getByLabel("title", { exact: true }).fill(title);
-  await dialog.getByLabel("note", { exact: true }).fill("Partial update");
+  await dialog.getByLabel("note", { exact: true }).fill("CD-34");
   await dialog.getByRole("button", { name: "Save record" }).click();
   await expect(dialog).toHaveCount(0);
   await row.getByRole("button", { name: /Delete record/ }).click();

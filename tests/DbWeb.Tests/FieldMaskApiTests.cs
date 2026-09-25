@@ -74,6 +74,77 @@ public partial class ApiTests
     }
 
     [Fact]
+    public void ExactFieldMasksEnforceRequiredOptionalAndEscapedPositions()
+    {
+        var column = new ColumnInfo("code", "varchar", true, false, false, false, null, 20);
+        var field = new LayoutField(
+            "code",
+            "Reference code",
+            "",
+            0,
+            false,
+            false,
+            "text",
+            Mask: new(Pattern: "AA-##?")
+        );
+        LayoutRules.ValidateMaskConfiguration(field, column);
+        foreach (var valid in new[] { "AB-1", "AB-12" })
+            LayoutRules.ValidateMaskValues(
+                [field],
+                new() { ["code"] = JsonSerializer.SerializeToElement(valid) }
+            );
+        foreach (var invalid in new[] { "A1-12", "AB-", "AB_12", "AB-123" })
+            Assert.Throws<ApiError>(() =>
+                LayoutRules.ValidateMaskValues(
+                    [field],
+                    new() { ["code"] = JsonSerializer.SerializeToElement(invalid) }
+                )
+            );
+
+        var optionalLiteral = field with { Mask = new(Pattern: "##-?#") };
+        LayoutRules.ValidateMaskConfiguration(optionalLiteral, column);
+        foreach (var valid in new[] { "123", "12-3" })
+            LayoutRules.ValidateMaskValues(
+                [optionalLiteral],
+                new() { ["code"] = JsonSerializer.SerializeToElement(valid) }
+            );
+
+        var escaped = field with { Mask = new(Pattern: @"\#-###") };
+        LayoutRules.ValidateMaskConfiguration(escaped, column);
+        LayoutRules.ValidateMaskValues(
+            [escaped],
+            new() { ["code"] = JsonSerializer.SerializeToElement("#-123") }
+        );
+        Assert.Throws<ApiError>(() =>
+            LayoutRules.ValidateMaskConfiguration(field with { Mask = new(Pattern: "") }, column)
+        );
+        Assert.Throws<ApiError>(() =>
+            LayoutRules.ValidateMaskConfiguration(field with { Mask = new(Pattern: "---") }, column)
+        );
+        Assert.Throws<ApiError>(() =>
+            LayoutRules.ValidateMaskConfiguration(
+                field with { Mask = new("digits", Pattern: "###") },
+                column
+            )
+        );
+        Assert.Throws<ApiError>(() =>
+            LayoutRules.ValidateMaskConfiguration(field with { Mask = new(Pattern: "##??") }, column)
+        );
+        Assert.Throws<ApiError>(() =>
+            LayoutRules.ValidateMaskConfiguration(field with { Mask = new(Pattern: @"\q#") }, column)
+        );
+        Assert.Throws<ApiError>(() =>
+            LayoutRules.ValidateMaskConfiguration(field with { Mask = new(Pattern: "###\\") }, column)
+        );
+        Assert.Throws<ApiError>(() =>
+            LayoutRules.ValidateMaskConfiguration(
+                field with { Mask = new(Pattern: "#####################") },
+                column
+            )
+        );
+    }
+
+    [Fact]
     public async Task FieldMasksValidateConfigurationDefaultsCreateAndUpdate()
     {
         var cs = Environment.GetEnvironmentVariable("MARIADB_TEST_CONNECTION");
@@ -120,7 +191,7 @@ public partial class ApiTests
                 false,
                 false,
                 "text",
-                Mask: new("alphanumeric", 6, "-")
+                Mask: new(Pattern: "###-###")
             );
             (await client.PutAsJsonAsync(layoutPath, new[] { field })).EnsureSuccessStatusCode();
 
@@ -132,9 +203,7 @@ public partial class ApiTests
                 .EnumerateArray()
                 .Single(item => item.GetProperty("name").GetString() == "code")
                 .GetProperty("mask");
-            Assert.Equal("alphanumeric", mask.GetProperty("characterSet").GetString());
-            Assert.Equal(6, mask.GetProperty("minimumLength").GetInt32());
-            Assert.Equal("-", mask.GetProperty("requiredCharacters").GetString());
+            Assert.Equal("###-###", mask.GetProperty("pattern").GetString());
 
             var objectDefinition = (await client.GetFromJsonAsync<ObjectDefinition>(root + "/object"))!;
             var computedMask = objectDefinition with
@@ -158,7 +227,7 @@ public partial class ApiTests
             );
 
             var path = $"/api/connections/{connectionId}/tables/{table}";
-            foreach (var value in new object[] { "A-1", "ABC123", "AB_123", 123456 })
+            foreach (var value in new object[] { "12-345", "ABC-123", "123_456", 123456 })
             {
                 var bad = await client.PostAsJsonAsync(
                     path + "/create",
@@ -177,7 +246,7 @@ public partial class ApiTests
                     {
                         values = new
                         {
-                            code = "AB-123"
+                            code = "123-456"
                         }
                     }
                 )
@@ -192,7 +261,7 @@ public partial class ApiTests
                 {
                     values = new
                     {
-                        code = "invalid"
+                        code = "123-45"
                     },
                     key = new
                     {
@@ -205,7 +274,7 @@ public partial class ApiTests
 
             var invalidLength = field with
             {
-                Mask = new("letters", 21)
+                Mask = new(Pattern: "#####################")
             };
             Assert.Equal(
                 HttpStatusCode.BadRequest,

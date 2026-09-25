@@ -394,6 +394,44 @@ describe("Lookup editor validation", () => {
     expect(masked.minLength).toBe(6);
   });
 
+  it("lets existing exact-mask violations remain unchanged during unrelated edits", async () => {
+    const save = vi.fn().mockResolvedValue(undefined);
+    render(
+      <RecordEditor
+        columns={[
+          { ...columns[1], nullable: true },
+          { ...columns[1], name: "notes", nullable: true },
+        ]}
+        fields={[
+          {
+            name: "name",
+            label: "Reference code",
+            section: "",
+            order: 0,
+            hidden: false,
+            readOnly: false,
+            widget: "text",
+            mask: { pattern: "###-###" },
+          },
+        ]}
+        row={{ values: { name: "OLD", notes: "Before" }, version: "old" }}
+        close={() => {}}
+        save={save}
+      />,
+    );
+    const masked = screen.getByLabelText("Reference code") as HTMLInputElement;
+    expect(masked.minLength).toBe(-1);
+    expect(masked.maxLength).toBe(-1);
+    fireEvent.change(screen.getByLabelText("notes"), {
+      target: { value: "After" },
+    });
+    fireEvent.click(screen.getByText("Save record"));
+    await waitFor(() => expect(save).toHaveBeenCalledWith({ notes: "After" }));
+    fireEvent.change(masked, { target: { value: "123-456" } });
+    expect(masked.minLength).toBe(7);
+    expect(masked.maxLength).toBe(7);
+  });
+
   it("shows the field-mask tip and validates changed values before saving", async () => {
     const save = vi.fn().mockResolvedValue(undefined);
     render(
@@ -408,11 +446,7 @@ describe("Lookup editor validation", () => {
             hidden: false,
             readOnly: false,
             widget: "text",
-            mask: {
-              characterSet: "alphanumeric",
-              minimumLength: 6,
-              requiredCharacters: "-",
-            },
+            mask: { pattern: "###-###?" },
           },
         ]}
         row={null}
@@ -420,11 +454,12 @@ describe("Lookup editor validation", () => {
         save={save}
       />,
     );
-    expect(screen.getByText(/Required format: Use at least 6 characters/)).toBeTruthy();
+    expect(screen.getByText(/Required format: Format: ###-###\?/)).toBeTruthy();
     const input = screen.getByLabelText("Reference code") as HTMLInputElement;
     expect(input.minLength).toBe(6);
+    expect(input.maxLength).toBe(7);
     expect(input.getAttribute("aria-describedby")).toBe("mask-tip-name");
-    fireEvent.change(input, { target: { value: "ABC123" } });
+    fireEvent.change(input, { target: { value: "123_45" } });
     fireEvent.click(screen.getByText("Save record"));
     await waitFor(() =>
       expect(screen.getByRole("alert").textContent).toContain(
@@ -432,9 +467,13 @@ describe("Lookup editor validation", () => {
       ),
     );
     expect(save).not.toHaveBeenCalled();
-    fireEvent.change(input, { target: { value: "AB-123" } });
+    fireEvent.change(input, { target: { value: "123-45" } });
     fireEvent.click(screen.getByText("Save record"));
-    await waitFor(() => expect(save).toHaveBeenCalledWith({ name: "AB-123" }));
+    await waitFor(() => expect(save).toHaveBeenCalledWith({ name: "123-45" }));
+
+    fireEvent.change(input, { target: { value: "123-456" } });
+    fireEvent.click(screen.getByText("Save record"));
+    await waitFor(() => expect(save).toHaveBeenLastCalledWith({ name: "123-456" }));
   });
 });
 
