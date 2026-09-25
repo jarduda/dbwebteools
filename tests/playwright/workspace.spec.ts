@@ -466,6 +466,7 @@ test("date/time and keyed dropdown layouts preserve values and enforce unique op
   expect(untouched.happened).toBe("2026-09-15T13:14:15.123456");
   expect(untouched.stamped).toBe("2026-09-15T16:17:18.654321");
   await row.getByRole("button", { name: /Edit record/ }).click();
+  await search.fill("");
   await edit.getByLabel("stamped", { exact: true }).fill("2026-10-20");
   await edit
     .getByLabel("happened", { exact: true })
