@@ -1061,10 +1061,7 @@ export function RecordEditor({
                             *
                           </span>
                         )}{" "}
-                        <small>
-                          {c.type}
-                          {c.primaryKey ? " · Primary key" : ""}
-                        </small>
+                        {c.primaryKey && <small>Primary key</small>}
                       </span>
                   {l?.widget === "sumup" ? (
                     <input
@@ -1197,6 +1194,34 @@ export function RecordEditor({
                         })
                       }
                     />
+                  ) : l?.widget === "checkbox" && c.nullable ? (
+                    <select
+                      aria-label={l.label || c.name}
+                      disabled={disabled}
+                      required={!disabled && !!l.required}
+                      value={
+                        values[c.name] == null
+                          ? ""
+                          : values[c.name]
+                            ? "true"
+                            : "false"
+                      }
+                      onChange={(e) =>
+                        setValues({
+                          ...values,
+                          [c.name]:
+                            e.target.value === ""
+                              ? null
+                              : e.target.value === "true",
+                        })
+                      }
+                    >
+                      <option value="" disabled={!!l.required}>
+                        No value
+                      </option>
+                      <option value="true">Yes</option>
+                      <option value="false">No</option>
+                    </select>
                   ) : (
                     <input
                       aria-label={l?.label || c.name}
@@ -1284,30 +1309,6 @@ export function RecordEditor({
                       precision.
                     </small>
                   )}
-                  {c.nullable &&
-                    !l?.required &&
-                    !disabled &&
-                    ![
-                      "lookup",
-                      "dropdown",
-                      "text",
-                      "number",
-                      "textarea",
-                    ].includes(widget) && (
-                      <span className="null-toggle">
-                        <input
-                          type="checkbox"
-                          checked={values[c.name] === null}
-                          onChange={(e) =>
-                            setValues({
-                              ...values,
-                              [c.name]: e.target.checked ? null : "",
-                            })
-                          }
-                        />
-                        Set NULL
-                      </span>
-                    )}
                     </label>
                   );
                 })}
