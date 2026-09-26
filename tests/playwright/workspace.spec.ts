@@ -828,8 +828,7 @@ test("required layout fields block empty creates and updates", async ({
   await page.getByRole("button", { name: "Edit field note" }).click();
   fieldDialog = page.getByRole("dialog", { name: "Edit database field" });
   await fieldDialog.getByLabel("Control / behavior").selectOption("text");
-  await fieldDialog.getByLabel("Input mask type").selectOption("exact");
-  await fieldDialog.getByLabel("Exact mask pattern").fill("AA-##?");
+  await fieldDialog.getByLabel("Input mask pattern").fill("AA-##?");
   await expect(fieldDialog.getByText(/User tip: Format: AA-##\?/)).toBeVisible();
   await fieldDialog.getByRole("button", { name: "Save field" }).click();
   await page.getByRole("button", { name: "Data browser", exact: true }).click();

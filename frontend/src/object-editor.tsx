@@ -679,131 +679,84 @@ export function ObjectEditor({
               <h3>Input mask</h3>
               <div className="form-grid">
                 <label>
-                  Mask type
-                  <select
-                    aria-label="Input mask type"
+                  Pattern
+                  <input
+                    aria-label="Input mask pattern"
+                    aria-describedby={
+                      fieldDraft.mask
+                        ? "input-mask-pattern-help input-mask-status"
+                        : "input-mask-pattern-help"
+                    }
+                    aria-invalid={!!fieldMaskError}
+                    maxLength={1024}
+                    placeholder="For example: AA-###"
                     disabled={busy}
-                    value={fieldDraft.mask?.pattern != null ? "exact" : fieldDraft.mask ? "rules" : ""}
+                    value={fieldDraft.mask?.pattern || ""}
+                    onChange={(event) => {
+                      const pattern = event.target.value;
+                      patchField({ mask: pattern ? { pattern } : null });
+                    }}
+                  />
+                </label>
+                <label className="check">
+                  <input
+                    type="checkbox"
+                    aria-label="Numbers only"
+                    checked={
+                      fieldDraft.mask?.pattern == null &&
+                      fieldDraft.mask?.characterSet === "digits" &&
+                      (fieldDraft.mask?.minimumLength ?? 1) === 1 &&
+                      !(fieldDraft.mask?.requiredCharacters || "")
+                    }
+                    disabled={busy}
                     onChange={(event) =>
                       patchField({
-                        mask:
-                          event.target.value === "exact"
-                            ? { pattern: "###-###" }
-                            : event.target.value === "rules"
-                              ? {
-                                  characterSet: "alphanumeric",
-                                  minimumLength: 1,
-                                  requiredCharacters: "",
-                                }
-                              : null,
+                        mask: event.target.checked
+                          ? {
+                              characterSet: "digits",
+                              minimumLength: 1,
+                              requiredCharacters: "",
+                            }
+                          : null,
                       })
                     }
-                  >
-                    <option value="">No input mask</option>
-                    <option value="exact">Exact pattern</option>
-                    <option value="rules">Character rules</option>
-                  </select>
+                  />
+                  Numbers only
                 </label>
-                {fieldDraft.mask?.pattern != null && (
-                  <label>
-                    Exact mask pattern
-                    <input
-                      aria-label="Exact mask pattern"
-                      required
-                      maxLength={1024}
-                      value={fieldDraft.mask.pattern}
-                      disabled={busy}
-                      onChange={(event) =>
-                        patchField({ mask: { pattern: event.target.value } })
-                      }
-                    />
-                  </label>
-                )}
-                {fieldDraft.mask && fieldDraft.mask.pattern == null && (
-                  <>
-                    <label>
-                      Allowed characters
-                      <select
-                        aria-label="Allowed mask characters"
-                        disabled={busy}
-                        value={fieldDraft.mask.characterSet || "alphanumeric"}
-                        onChange={(event) =>
-                          patchField({
-                            mask: {
-                              ...fieldDraft.mask!,
-                              characterSet: event.target.value as
-                                | "letters"
-                                | "digits"
-                                | "alphanumeric",
-                            },
-                          })
-                        }
-                      >
-                        <option value="letters">Letters only</option>
-                        <option value="digits">Numbers only</option>
-                        <option value="alphanumeric">Letters and numbers</option>
-                      </select>
-                    </label>
-                    <label>
-                      Minimum length
-                      <input
-                        aria-label="Mask minimum length"
-                        type="number"
-                        required
-                        min={1}
-                        max={
-                          (editing ? draft.type : databaseType(fieldDraft.widget)) === "text"
-                            ? draft.length
-                            : 4000
-                        }
-                        value={fieldDraft.mask.minimumLength || 1}
-                        disabled={busy}
-                        onChange={(event) =>
-                          patchField({
-                            mask: {
-                              ...fieldDraft.mask!,
-                              minimumLength: Number(event.target.value),
-                            },
-                          })
-                        }
-                      />
-                    </label>
-                    <label>
-                      Required characters
-                      <input
-                        aria-label="Mask required characters"
-                        maxLength={16}
-                        placeholder="For example: -/"
-                        value={fieldDraft.mask.requiredCharacters || ""}
-                        disabled={busy}
-                        onChange={(event) =>
-                          patchField({
-                            mask: {
-                              ...fieldDraft.mask!,
-                              requiredCharacters: event.target.value,
-                            },
-                          })
-                        }
-                      />
-                    </label>
-                  </>
-                )}
               </div>
+              <p id="input-mask-pattern-help" className="muted">
+                # number · A letter · X letter or number · add ? after any
+                position to make it optional · use \ before #, A, X, ?, or \
+                to make it literal.
+              </p>
               {fieldDraft.mask && (
                 <>
-                  {fieldDraft.mask.pattern != null && (
+                  {fieldDraft.mask.pattern == null &&
+                    !(
+                      fieldDraft.mask.characterSet === "digits" &&
+                      (fieldDraft.mask.minimumLength ?? 1) === 1 &&
+                      !(fieldDraft.mask.requiredCharacters || "")
+                    ) && (
                     <p className="muted">
-                      # number · A letter · X letter or number · add ? after any
-                      position to make it optional · use \ before #, A, X, ?, or \
-                      to make it literal.
+                      Existing custom rule: {maskTip(fieldDraft.mask)} Replace it
+                      by entering a pattern or selecting Numbers only.
                     </p>
                   )}
                   <p
+                    id="input-mask-status"
                     className={fieldMaskError ? "alert" : "muted"}
                     role={fieldMaskError ? "alert" : undefined}
                   >
                     {fieldMaskError || `User tip: ${maskTip(fieldDraft.mask)}`}
                   </p>
+                  <button
+                    type="button"
+                    className="secondary"
+                    disabled={busy}
+                    onClick={() => patchField({ mask: null })}
+                  >
+                    Remove input mask
+                  </button>
                 </>
               )}
             </div>

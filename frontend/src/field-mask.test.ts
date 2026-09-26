@@ -44,3 +44,16 @@ describe("exact field masks", () => {
     );
   });
 });
+
+describe("numbers-only field masks", () => {
+  it("accepts ASCII digits and rejects other characters", () => {
+    const mask = {
+      characterSet: "digits" as const,
+      minimumLength: 1,
+      requiredCharacters: "",
+    };
+    expect(maskValueError(mask, "123456")).toBeNull();
+    expect(maskValueError(mask, "12A456")).not.toBeNull();
+    expect(maskValueError(mask, "12-456")).not.toBeNull();
+  });
+});

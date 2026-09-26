@@ -71,6 +71,18 @@ public partial class ApiTests
                 Mask = new("letters", 6, "--")
             }, column)
         );
+
+        var numbersOnly = field with { Mask = new("digits") };
+        LayoutRules.ValidateMaskValues(
+            [numbersOnly],
+            new() { ["code"] = JsonSerializer.SerializeToElement("123456") }
+        );
+        Assert.Throws<ApiError>(() =>
+            LayoutRules.ValidateMaskValues(
+                [numbersOnly],
+                new() { ["code"] = JsonSerializer.SerializeToElement("123A56") }
+            )
+        );
     }
 
     [Fact]

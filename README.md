@@ -249,7 +249,7 @@ Required fields must be editable stored columns; generated, auto-increment, read
 
 ### Text input masks
 
-For a Text or Text area field, open **Object editor → Edit → Input mask** to restrict non-empty values to letters, numbers, or letters and numbers; set a minimum length; and optionally require unique punctuation characters such as `-` or `/`. Required punctuation is permitted in addition to the selected character set and every configured character must appear at least once. Empty values remain governed by the field's Required/nullability settings.
+For a Text or Text area field, open **Object editor → Edit → Input mask** to enter an exact pattern or enable **Numbers only**. In a pattern, `#` accepts a number, `A` a letter, and `X` a letter or number; append `?` to make a position optional. Empty values remain governed by the field's Required/nullability settings.
 
 The record editor shows the complete rule below the field and checks changed values before saving. The backend independently enforces the same rule for creates, updates, related-record writes, lookup-copied values, and configured creation defaults. Masks are structured rather than arbitrary regular expressions.
 
