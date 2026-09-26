@@ -22,11 +22,11 @@ const definition = { fields: [
   { name: "title", label: "Title", readOnly: false, widget: "text" },
 ], view: {} };
 
-function mockApi() {
+function mockApi(objectDefinition = definition) {
   vi.mocked(api).mockImplementation(async (url, method = "GET") => {
     if (url === "/connections/1/tables") return ["things"] as never;
     if (url.includes("/schema/tables/things")) return schema as never;
-    if (url.endsWith("/tables/things/object") && method === "GET") return definition as never;
+    if (url.endsWith("/tables/things/object") && method === "GET") return objectDefinition as never;
     return undefined as never;
   });
 }
@@ -106,20 +106,19 @@ describe("Object field workflow", () => {
     render(<ObjectEditor connections={[{ id: 1, name: "Local" } as never]} onChanged={() => {}} />);
     await screen.findByText("varchar(100)");
     fireEvent.click(screen.getByRole("button", { name: "Edit field title" }));
-    fireEvent.change(screen.getByLabelText("Input mask type"), {
-      target: { value: "exact" },
-    });
-    fireEvent.change(screen.getByLabelText("Exact mask pattern"), {
-      target: { value: "" },
-    });
+    expect(screen.queryByLabelText("Input mask type")).toBeNull();
+    expect(screen.queryByLabelText("Allowed mask characters")).toBeNull();
+    const patternInput = screen.getByLabelText("Input mask pattern");
+    expect(patternInput.getAttribute("aria-describedby")).toContain("input-mask-pattern-help");
+    fireEvent.change(patternInput, { target: { value: "?" } });
+    expect(patternInput.getAttribute("aria-invalid")).toBe("true");
     expect(screen.getByRole("alert").textContent).toContain(
-      "Exact mask patterns must be between 1 and 1024 characters.",
+      "An optional marker must follow a mask position.",
     );
     expect(
-      (screen.getByRole("button", { name: "Save field" }) as HTMLButtonElement)
-        .disabled,
+      (screen.getByRole("button", { name: "Save field" }) as HTMLButtonElement).disabled,
     ).toBe(true);
-    fireEvent.change(screen.getByLabelText("Exact mask pattern"), {
+    fireEvent.change(patternInput, {
       target: { value: "AA-##?" },
     });
     expect(screen.getByText(/User tip: Format: AA-##\?/)).toBeTruthy();
@@ -140,27 +139,69 @@ describe("Object field workflow", () => {
     );
   });
 
-  it("rejects invalid mask configuration in the field dialog", async () => {
+  it("offers a numbers-only mask without exposing legacy character rules", async () => {
     mockApi();
     render(<ObjectEditor connections={[{ id: 1, name: "Local" } as never]} onChanged={() => {}} />);
     await screen.findByText("varchar(100)");
     fireEvent.click(screen.getByRole("button", { name: "Edit field title" }));
-    fireEvent.change(screen.getByLabelText("Input mask type"), {
-      target: { value: "rules" },
-    });
-    fireEvent.change(screen.getByLabelText("Allowed mask characters"), {
-      target: { value: "letters" },
-    });
-    fireEvent.change(screen.getByLabelText("Mask required characters"), {
-      target: { value: "- -" },
-    });
-    expect(screen.getByRole("alert").textContent).toContain(
-      "Required characters must be punctuation without spaces.",
+    fireEvent.click(screen.getByLabelText("Numbers only"));
+    expect(screen.getByText(/User tip: Use at least 1 characters. Allowed: numbers/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Save field" }));
+    await waitFor(() =>
+      expect(api).toHaveBeenCalledWith(
+        "/admin/connections/1/tables/things/object",
+        "PUT",
+        expect.objectContaining({
+          fields: expect.arrayContaining([
+            expect.objectContaining({
+              name: "title",
+              mask: {
+                characterSet: "digits",
+                minimumLength: 1,
+                requiredCharacters: "",
+              },
+            }),
+          ]),
+        }),
+      ),
     );
-    expect(
-      (screen.getByRole("button", { name: "Save field" }) as HTMLButtonElement)
-        .disabled,
-    ).toBe(true);
+  });
+
+  it("identifies and removes a legacy custom rule without misrepresenting it", async () => {
+    mockApi({
+      ...definition,
+      fields: definition.fields.map((field) =>
+        field.name === "title"
+          ? {
+              ...field,
+              mask: {
+                characterSet: "digits",
+                minimumLength: 6,
+                requiredCharacters: "-",
+              },
+            }
+          : field,
+      ),
+    });
+    render(<ObjectEditor connections={[{ id: 1, name: "Local" } as never]} onChanged={() => {}} />);
+    await screen.findByText("varchar(100)");
+    fireEvent.click(screen.getByRole("button", { name: "Edit field title" }));
+    expect((screen.getByLabelText("Numbers only") as HTMLInputElement).checked).toBe(false);
+    expect(screen.getByText(/Existing custom rule: Use at least 6 characters/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Remove input mask" }));
+    expect(screen.queryByRole("button", { name: "Remove input mask" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Save field" }));
+    await waitFor(() =>
+      expect(api).toHaveBeenCalledWith(
+        "/admin/connections/1/tables/things/object",
+        "PUT",
+        expect.objectContaining({
+          fields: expect.arrayContaining([
+            expect.objectContaining({ name: "title", mask: null }),
+          ]),
+        }),
+      ),
+    );
   });
 
   it("creates a required email as non-null VARCHAR(255) without an Allow NULL control", async () => {
